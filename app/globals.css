@@ -1,0 +1,125 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-primary: var(--primary-color, #000000);
+  --color-accent: var(--accent-color, #FFD700);
+  --color-background-custom: var(--bg-color, #F9F9F9);
+  --color-surface: var(--surface-color, #FFFFFF);
+  --color-text-main: var(--text-color, #1A1A1A);
+  --font-sans: var(--font-inter);
+}
+
+:root {
+  background-color: var(--color-background-custom);
+  color: var(--color-text-main);
+}
+
+/* ===== 61. DARK MODE ===== */
+.dark {
+  --bg-color: #09090b;
+  --surface-color: #18181b;
+  --text-color: #fafafa;
+  color-scheme: dark;
+}
+
+.dark :root,
+.dark body {
+  background-color: #09090b;
+  color: #fafafa;
+}
+
+/* ===== 62. ACCESSIBILITY — High Contrast ===== */
+.high-contrast {
+  --bg-color: #000000;
+  --surface-color: #111111;
+  --text-color: #FFFFFF;
+}
+
+.high-contrast .dark {
+  --bg-color: #000000;
+  --surface-color: #111111;
+}
+
+/* High contrast: stronger borders and text */
+.high-contrast * {
+  border-color: #888 !important;
+}
+
+.high-contrast .text-zinc-400,
+.high-contrast .text-zinc-500 {
+  color: #ccc !important;
+}
+
+.high-contrast .text-zinc-300 {
+  color: #ddd !important;
+}
+
+.high-contrast button:focus-visible,
+.high-contrast a:focus-visible,
+.high-contrast input:focus-visible {
+  outline: 3px solid #FFD700 !important;
+  outline-offset: 2px;
+}
+
+/* ===== 62. ACCESSIBILITY — Reduce Motion ===== */
+.reduce-motion * {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+
+/* ===== 62. ACCESSIBILITY — Focus visible for all interactive elements ===== */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="button"]:focus-visible,
+[role="switch"]:focus-visible {
+  outline: 2px solid var(--primary-color, #3b82f6);
+  outline-offset: 2px;
+}
+
+/* Skip navigation link (screen readers) */
+.sr-skip-link {
+  position: absolute;
+  left: -10000px;
+  top: auto;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.sr-skip-link:focus {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  width: auto;
+  height: auto;
+  padding: 12px 24px;
+  background: #18181b;
+  color: white;
+  z-index: 9999;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+body {
+  font-family: var(--font-sans), sans-serif;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Remover barra de rolagem para melhorar experiência PWA  */
+::-webkit-scrollbar {
+  width: 0px;
+  background: transparent;
+}
+
+/* 64. Focus Mode — smooth transition for main content */
+.focus-mode-transition {
+  transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}

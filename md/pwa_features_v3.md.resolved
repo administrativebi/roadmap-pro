@@ -1,0 +1,109 @@
+# 📱 PWA Features v3 — Implementação Completa
+
+## ✅ 8 Funcionalidades Implementadas
+
+---
+
+## 📸 Screenshots das Novas Telas
+
+````carousel
+![Timer/Cronômetro integrado — 00:06 com badges "Speed" e "Foco" ativos, barra de progresso verde, estimado 10:00](C:/Users/valad/.gemini/antigravity/brain/3c1cf8cc-52dc-4caf-b2ee-2e091d11195f/checklist_start_1772132091523.png)
+<!-- slide -->
+![Botão "Assinar e Finalizar" com ícone de caneta — exibe assinatura digital canvas antes de completar](C:/Users/valad/.gemini/antigravity/brain/3c1cf8cc-52dc-4caf-b2ee-2e091d11195f/checklist_end_1772132113754.png)
+<!-- slide -->
+![QR Codes por Área — Grid com Cozinha, Salão, Estoque, Banheiros, Bar/Balcão, Câmara Fria. Cada um com QR único + botão "Escanear QR"](C:/Users/valad/.gemini/antigravity/brain/3c1cf8cc-52dc-4caf-b2ee-2e091d11195f/qrcodes_page_1772132139167.png)
+<!-- slide -->
+![Modo Quiosque — Tela limpa para tablet com relógio 15:56, saudação "Boa tarde!", cards grandes "Iniciar Checklist" sem sidebar](C:/Users/valad/.gemini/antigravity/brain/3c1cf8cc-52dc-4caf-b2ee-2e091d11195f/kiosk_page_1772132162582.png)
+````
+
+---
+
+## 🆕 Detalhes de Cada Feature
+
+### 1. 📴 Modo Offline (Service Worker)
+- **Cache estático** do App Shell (páginas, assets) via [sw.js](file:///e:/Projetos/Rascunhos/RoadMap/public/sw.js)
+- **Network-first** strategy: tenta rede, fallback para cache
+- **Fila offline**: respostas salvas em `localStorage`, sync quando reconectar
+- **Background Sync** via `SyncManager` para reenvio automático
+- **Página `/offline`** exibe pendências e botão de retry
+
+### 2. 🔔 Push Notifications
+- Permissão de notificação com fallback gracioso
+- Notificações pré-configuradas:
+  - [checklistPending](file:///e:/Projetos/Rascunhos/RoadMap/lib/notifications.ts#49-55) — "Checklist de Abertura pendente! Agendado para 07:00"
+  - [streakWarning](file:///e:/Projetos/Rascunhos/RoadMap/lib/notifications.ts#56-63) — "🔥 5 dias seguidos! Complete um checklist hoje"
+  - [checklistCompleted](file:///e:/Projetos/Rascunhos/RoadMap/lib/notifications.ts#64-70) — "Você ganhou +85 XP!"
+  - [newBadge](file:///e:/Projetos/Rascunhos/RoadMap/lib/notifications.ts#71-77) — "🏅 Badge 'Mestre APPCC' desbloqueada!"
+- Ações na notificação: "Abrir" ou "Dispensar"
+- Click handler redireciona para a página correta
+
+### 3. 🏷️ QR Code por Área
+- Página `/qrcodes` com grid de 6 áreas (Cozinha, Salão, Estoque...)
+- QR SVG gerado via `qrcode.react` com link direto para o checklist da área
+- 3 ações: **Copiar link**, **Baixar PNG**, **Imprimir** (abre janela formatada)
+- Botão "Escanear QR" com modal de câmera
+- Na sidebar: novo item "QR Codes" 
+
+### 4. 🖥️ Modo Quiosque
+- Página `/kiosk` sem sidebar, sem login necessário
+- Cards extra-grandes para touch em tablets
+- Relógio digital em tempo real (HH:MM gigante)
+- Saudação por período (Bom dia / Boa tarde / Boa noite)
+- Botão fullscreen para tablet fixo
+- Footer: "Modo Quiosque — Checklist Pro"
+
+### 5. 📲 Widget na Home (PWA)
+- [manifest.json](file:///e:/Projetos/Rascunhos/RoadMap/public/manifest.json) completo com widgets config
+- Shortcuts para Checklists, Agenda e Ranking
+- `periodicSync` atualiza dados do widget
+- Suporte a `beforeinstallprompt` com banner de instalação
+
+### 6. ✍️ Assinatura Digital
+- Canvas HTML5 com suporte a **touch** (dedo) e **mouse**
+- **High DPI** rendering para telas retina
+- Linha guia no canvas
+- Botões: **Desfazer** (undo com histórico), **Limpar**, **Confirmar**
+- Export como PNG data URL para persistência
+- Aparece em overlay modal ao clicar "Assinar e Finalizar"
+
+### 7. ⏱️ Timer / Cronômetro
+- Cronômetro em tempo real com display `00:00`
+- Barra de progresso com 3 estados visuais:
+  - 🟢 Verde: dentro do tempo
+  - 🟡 Amber: > 80% do estimado  
+  - 🔴 Vermelho: tempo excedido (pulsa)
+- **Speed Bonus** (+20% XP): terminar antes do estimado
+- Exibe "Estimado: 10:00" abaixo do timer
+
+### 8. 🧘 Bônus de Foco (Anti-Inatividade)
+- Monitora cliques, toques, teclas e scroll
+- Alerta warning após 2min de inatividade
+- **Focus Bonus** (+15% XP): completar sem pausa > 5min
+- Badge visual: `⚡ Speed` e `☕ Foco`
+- Se perder bônus: badge fica riscado + alerta vermelho
+
+---
+
+## 📂 Arquivos Criados
+
+| Arquivo | Descrição |
+|---------|-----------|
+| [public/manifest.json](file:///e:/Projetos/Rascunhos/RoadMap/public/manifest.json) | PWA manifest com ícones, shortcuts, widgets |
+| [public/sw.js](file:///e:/Projetos/Rascunhos/RoadMap/public/sw.js) | Service Worker (cache, sync, push, periodic) |
+| [lib/notifications.ts](file:///e:/Projetos/Rascunhos/RoadMap/lib/notifications.ts) | Helper de push notifications |
+| [lib/offline.ts](file:///e:/Projetos/Rascunhos/RoadMap/lib/offline.ts) | Fila offline e sync manager |
+| [components/providers/pwa-provider.tsx](file:///e:/Projetos/Rascunhos/RoadMap/components/providers/pwa-provider.tsx) | Provider global (SW register, banners) |
+| [components/shared/SignatureCanvas.tsx](file:///e:/Projetos/Rascunhos/RoadMap/components/shared/SignatureCanvas.tsx) | Assinatura digital canvas |
+| [components/shared/ChecklistTimer.tsx](file:///e:/Projetos/Rascunhos/RoadMap/components/shared/ChecklistTimer.tsx) | Timer com Speed/Focus bonuses |
+| [components/shared/QRCodeManager.tsx](file:///e:/Projetos/Rascunhos/RoadMap/components/shared/QRCodeManager.tsx) | Gerador de QR codes por área |
+| [app/kiosk/page.tsx](file:///e:/Projetos/Rascunhos/RoadMap/app/kiosk/page.tsx) | Modo quiosque para tablets |
+| [app/offline/page.tsx](file:///e:/Projetos/Rascunhos/RoadMap/app/offline/page.tsx) | Fallback offline |
+| [app/(app)/qrcodes/page.tsx](file:///e:/Projetos/Rascunhos/RoadMap/app/%28app%29/qrcodes/page.tsx) | Página de QR Codes |
+
+## 📂 Arquivos Modificados
+
+| Arquivo | Mudança |
+|---------|---------|
+| [app/layout.tsx](file:///e:/Projetos/Rascunhos/RoadMap/app/layout.tsx) | Manifest, viewport mobile, PWAProvider |
+| [components/shared/GamifiedChecklist.tsx](file:///e:/Projetos/Rascunhos/RoadMap/components/shared/GamifiedChecklist.tsx) | Timer + Assinatura integrados |
+| [components/shared/Sidebar.tsx](file:///e:/Projetos/Rascunhos/RoadMap/components/shared/Sidebar.tsx) | Link "QR Codes" na navegação |

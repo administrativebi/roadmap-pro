@@ -1,0 +1,100 @@
+# 🔧 Construtor de Checklists — Implementação Completa
+
+Todas as 7 funcionalidades (49-55) foram implementadas em um sistema unificado de construção de checklists.
+
+## ✅ Funcionalidades Implementadas
+
+### 49. Construtor Drag-and-Drop 🔥
+Interface visual estilo Google Forms para criar checklists arrastando perguntas.
+
+![Builder Top](checklist_builder_top_1772134888999.png)
+![Builder Scrolled](checklist_builder_scrolled_1772134903203.png)
+
+**Principais recursos:**
+- Drag-and-Drop com `framer-motion Reorder` para reordenar perguntas
+- Handle de arraste (⋮⋮) em cada card
+- Edição inline de título e descrição
+- Barra de ferramentas sticky com Templates, Versões, Preview e Salvar
+- Painel lateral de edição ao clicar na pergunta
+
+### 50. Lógica Condicional 🔥
+Se responder "Não" na pergunta 3, mostra perguntas extras 3a e 3b.
+
+- Tab "Condições" no editor lateral
+- 3 tipos de ação: **Mostrar perguntas extras**, **Exigir foto**, **Criar plano de ação**
+- Badges visuais `⚡ Condicional` nos cards
+- Perguntas condicionais aparecem com seta `↳` e borda tracejada
+- Badge `↳ Aparece se condição` nas perguntas filhas
+
+### 51. Seções / Agrupamento ⚡
+Dividir checklist em seções: "Limpeza", "Equipamentos", "Estoque".
+
+- Borda lateral colorida por seção
+- Ícones customizáveis (16 opções)
+- Cores customizáveis (8 opções)
+- Título e descrição editáveis inline
+- Colapsar/expandir seções
+- Contagem de perguntas e peso por seção
+- Botão "+ Adicionar Seção" no final
+
+### 52. Templates Duplicáveis ⚡
+Duplicar checklist existente e customizar para outra unidade.
+
+- Modal com 6 templates pré-configurados
+- Busca por nome/descrição
+- Filtro por categoria (Operacional, Segurança, Estoque, Compliance)
+- Info: nº perguntas, seções, tempo estimado, unidades, rating
+- Botão "Duplicar" com feedback visual
+
+### 53. Versionamento ⚡
+Histórico de versões do template com registros antigos mantidos.
+
+- Timeline vertical com dots e linhas
+- 6 versões de exemplo (v2.0 → v3.2)
+- Log de mudanças por versão
+- Stats: perguntas adicionadas/removidas/modificadas
+- Badge "ATUAL" na versão corrente
+- Botão "Restaurar" nas versões anteriores
+- Autor e data de cada versão
+
+### 54. Peso por Pergunta ⚡
+Perguntas críticas valem mais no score de conformidade.
+
+- Escala 1-5 no editor lateral
+- Cores adaptativas: Normal (cinza), Médio (âmbar), Crítico (vermelho)
+- Badge `⚖️ Peso X` nos cards das perguntas
+- Soma total do peso exibida no header e por seção
+
+### 55. Instruções com Mídia 📷
+Adicionar foto/vídeo de referência na pergunta.
+
+- Tab "Mídia" no editor lateral
+- Adicionar **foto de referência** ou **vídeo de instrução**
+- Legenda editável para cada mídia
+- Badge `📷 X mídia` nos cards das perguntas
+- Preview com placeholder visual
+
+## 📁 Arquivos Criados
+
+| Arquivo | Descrição |
+|---------|-----------|
+| [checklist-builder.ts](file:///e:/Projetos/Rascunhos/RoadMap/types/checklist-builder.ts) | Tipos TypeScript (QuestionType, ConditionalRule, MediaInstruction, etc.) |
+| [ChecklistBuilder.tsx](file:///e:/Projetos/Rascunhos/RoadMap/components/builder/ChecklistBuilder.tsx) | Componente principal do builder drag-and-drop |
+| [QuestionEditor.tsx](file:///e:/Projetos/Rascunhos/RoadMap/components/builder/QuestionEditor.tsx) | Editor lateral com 3 tabs (Geral, Condições, Mídia) |
+| [TemplateManager.tsx](file:///e:/Projetos/Rascunhos/RoadMap/components/builder/TemplateManager.tsx) | Modal de templates duplicáveis |
+| [VersionHistory.tsx](file:///e:/Projetos/Rascunhos/RoadMap/components/builder/VersionHistory.tsx) | Modal de histórico de versões |
+| [page.tsx](file:///e:/Projetos/Rascunhos/RoadMap/app/%28app%29/builder/page.tsx) | Página `/builder` |
+
+## 📝 Sidebar Atualizada
+- Link **Construtor** (🔨) adicionado entre "Checklists" e "Agenda"
+
+## 🎨 6 Tipos de Pergunta Suportados
+
+| Tipo | Ícone | Uso |
+|------|-------|-----|
+| Sim / Não | ✅ | Conformidade binária |
+| Texto | 📝 | Resposta descritiva |
+| Número | 🔢 | Temperatura, quantidade |
+| Múltipla Escolha | 📋 | Opções pré-definidas |
+| Foto | 📸 | Evidência fotográfica |
+| Avaliação | ⭐ | Escala 1-5 estrelas |

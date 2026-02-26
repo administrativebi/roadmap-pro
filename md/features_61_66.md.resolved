@@ -1,0 +1,147 @@
+# ⚡ Funcionalidades 61-66 — Implementação Completa
+
+Todas as 6 funcionalidades foram implementadas e verificadas no browser.
+
+---
+
+## 61. 🌙 Dark Mode
+
+Tema escuro completo ativável nas Configurações.
+
+![Dark Mode](settings_dark_mode_1772135698268.png)
+
+**Como funciona:**
+- 3 opções: **Claro**, **Escuro**, **Sistema** (segue preferência do OS)
+- Toggle visual com preview de cada tema
+- Persiste no `localStorage` — abre sempre no último tema usado
+- Atualiza CSS variables do `body` para garantir que o fundo realmente mude
+- Todos os componentes já usam classes `dark:` do Tailwind
+
+---
+
+## 62. ♿ Acessibilidade (A11y)
+
+![Acessibilidade](settings_scrolled_1772135667178.png)
+
+**Recursos implementados:**
+- **Tamanho de Fonte**: Normal / Grande (1.15x) / Extra Grande (1.3x)
+- **Alto Contraste**: Bordas mais visíveis, textos mais claros, focus ring amarelo (3px)
+- **Reduzir Animações**: Desativa todos os confetti, transições e animações
+- **Dicas para Leitores de Tela**: Toggle para aria-labels extras
+- **Skip Navigation**: Link invisível "Pular para conteúdo principal" (Tab na primeira vez)
+- **Focus Visible**: Ring de foco em todos os elementos interativos
+- **role="switch"**: Toggles com role semântico correto
+
+---
+
+## 63. 🎆 Animações de Level Up
+
+Animação fullscreen especial quando sobe de nível. Testável em **Configurações → Demonstrações → Testar Level Up**.
+
+**Efeitos:**
+- ✨ 60 partículas de confetti com cores e física diferentes
+- 💫 Anel de sparkle expansivo
+- 👑 Badge dourado com glow pulsante e número do nível
+- 🎵 Sons musicais (accord C5→E5→G5→C6 via Web Audio API)
+- 📊 Exibição de XP total, próximo nível e recompensa desbloqueada
+- ⏱️ Auto-dismiss em 5 segundos com transição de saída
+
+---
+
+## 64. 🎯 Modo Foco
+
+Ao executar checklist, esconde sidebar e distrações — só a pergunta na tela.
+
+**Como funciona:**
+- Sidebar desliza para fora com animação spring
+- Conteúdo principal expande para tela cheia
+- Indicador flutuante "Modo Foco" no canto superior direito
+- Botão X para sair do foco a qualquer momento
+- Hook [useFocusMode()](file:///e:/Projetos/Rascunhos/RoadMap/components/providers/focus-mode-provider.tsx#33-34) disponível em qualquer componente
+
+---
+
+## 65. 🌍 Idiomas (i18n)
+
+Suporte a 3 idiomas para franquias internacionais.
+
+**Idiomas suportados:**
+| Idioma | Flag | Cobertura |
+|--------|------|-----------|
+| 🇧🇷 Português (BR) | PT | 100% |
+| 🇪🇸 Español | ES | 100% |
+| 🇺🇸 English | EN | 100% |
+
+**Traduções incluem:**
+- Navegação completa (15 itens)
+- Ações comuns (16 termos)
+- Dashboard (6 termos)
+- Checklists (11 termos)
+- Gamificação (6 termos)
+- Configurações (13 termos)
+
+**Uso:** `const { t } = useI18n()` → [t("nav.dashboard")](file:///e:/Projetos/Rascunhos/RoadMap/components/providers/i18n-provider.tsx#253-254) retorna "Dashboard" ou "Panel" ou "Dashboard"
+
+---
+
+## 66. 🗺️ Onboarding Tour
+
+Tour guiado interativo na primeira visita ao app.
+
+![Onboarding Tour](settings_top_1772135647976.png)
+
+**8 steps do tour:**
+1. Boas-vindas ao Checklist Pro
+2. Menu de Navegação (sidebar)
+3. Sua Sequência 🔥
+4. Nível e XP
+5. Seus Checklists
+6. Construtor Drag & Drop
+7. Ranking da Equipe
+8. Pronto para começar!
+
+**Recursos:**
+- Overlay escuro com **SVG mask** — hole recorta o elemento destacado
+- Borda pulsante amarela de destaque (box-shadow animation)
+- Tooltip com emoji, título, descrição
+- Barra de progresso
+- Navegação anterior/próximo
+- Auto-scroll para o elemento em foco
+- Aparece **apenas na 1ª visita** (localStorage)
+- Pode ser reiniciado em **Configurações → Demonstrações → Reiniciar Tour**
+
+---
+
+## 📁 Arquivos Criados
+
+| Arquivo | Descrição |
+|---------|-----------|
+| [theme-provider.tsx](file:///e:/Projetos/Rascunhos/RoadMap/components/providers/theme-provider.tsx) | Provider Dark Mode (light/dark/system) |
+| [a11y-provider.tsx](file:///e:/Projetos/Rascunhos/RoadMap/components/providers/a11y-provider.tsx) | Provider Acessibilidade (fonte, contraste, motion, a11y) |
+| [i18n-provider.tsx](file:///e:/Projetos/Rascunhos/RoadMap/components/providers/i18n-provider.tsx) | Provider i18n (PT/ES/EN com 67+ traduções por idioma) |
+| [focus-mode-provider.tsx](file:///e:/Projetos/Rascunhos/RoadMap/components/providers/focus-mode-provider.tsx) | Provider Focus Mode |
+| [LevelUpAnimation.tsx](file:///e:/Projetos/Rascunhos/RoadMap/components/features/LevelUpAnimation.tsx) | Animação de Level Up com confetti + sons |
+| [OnboardingTour.tsx](file:///e:/Projetos/Rascunhos/RoadMap/components/features/OnboardingTour.tsx) | Tour guiado interativo 8 steps |
+
+## 📝 Arquivos Modificados
+
+| Arquivo | Mudança |
+|---------|---------|
+| [layout.tsx](file:///e:/Projetos/Rascunhos/RoadMap/app/layout.tsx) | 4 novos providers + skip-link a11y |
+| [globals.css](file:///e:/Projetos/Rascunhos/RoadMap/app/globals.css) | Dark mode, high contrast, reduce motion, focus-visible, sr-skip-link |
+| [AppShell.tsx](file:///e:/Projetos/Rascunhos/RoadMap/components/shared/AppShell.tsx) | Focus Mode + OnboardingTour integrados |
+| [Sidebar.tsx](file:///e:/Projetos/Rascunhos/RoadMap/components/shared/Sidebar.tsx) | data-tour attributes para o tour guiado |
+| [settings/page.tsx](file:///e:/Projetos/Rascunhos/RoadMap/app/%28app%29/settings/page.tsx) | Reescrita completa com painel de tema/idioma/a11y/demos |
+
+## 🏗️ Arquitetura de Providers
+
+```
+RootLayout
+  └─ QueryProvider
+      └─ ThemeProvider (61)
+          └─ A11yProvider (62)
+              └─ I18nProvider (65)
+                  └─ FocusModeProvider (64)
+                      └─ PWAProvider
+                          └─ {children}
+```

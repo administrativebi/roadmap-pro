@@ -1,0 +1,14 @@
+{
+  "name": "Default Premium",
+  "colors": {
+    "primary": "#000000",
+    "accent": "#FFD700",
+    "background": "#F9F9F9",
+    "surface": "#FFFFFF",
+    "text": "#1A1A1A"
+  },
+  "assets": {
+    "logo": "/logo.svg",
+    "dashboard_bg": ""
+  }
+}
