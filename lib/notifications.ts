@@ -16,7 +16,7 @@ export async function subscribeToPush(): Promise<PushSubscription | null> {
 
         const subscription = await registration.pushManager.subscribe({
             userVisibleOnly: true,
-            applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+            applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) as any,
         });
 
         // TODO: Enviar subscription para o backend (Supabase)
@@ -41,7 +41,7 @@ export async function sendLocalNotification(
         badge: "/icons/icon-72x72.png",
         vibrate: [100, 50, 100],
         ...options,
-    });
+    } as any);
 }
 
 // Notificações pré-configuradas

@@ -19,7 +19,7 @@ export function calculateScore(
     const multiplier = DIFFICULTY_MULTIPLIER[template.difficulty] || 1;
 
     // Bônus se 100% dos itens obrigatórios foram completados
-    const requiredItems = template.items.filter((i) => i.is_required);
+    const requiredItems = template.questions.filter((i) => i.is_required);
     const allRequiredDone = requiredItems.every((i) =>
         completedItemIds.includes(i.id)
     );
