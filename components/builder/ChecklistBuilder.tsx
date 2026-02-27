@@ -21,7 +21,13 @@ import { ScheduleConfigModal, ScheduleBadge, type ScheduleConfig } from "./Sched
 import { createClient } from "@/lib/supabase/client";
 
 function generateId() {
-    return `id_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        return crypto.randomUUID();
+    }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+        var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
 }
 
 function createDefaultQuestion(order: number): ChecklistQuestion {
@@ -29,10 +35,12 @@ function createDefaultQuestion(order: number): ChecklistQuestion {
         id: generateId(),
         text: "",
         type: "yes_no",
+        properties: ["yes_no"],
         required: true,
         weight: 1,
         mediaInstructions: [],
         conditionalRules: [],
+        optionItems: [],
         order,
     };
 }
@@ -78,6 +86,7 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
         deadline_time: "",
         notify_before_minutes: 60,
         auto_create: true,
+        skip_holidays: false,
     });
     const [currentTemplateDbId, setCurrentTemplateDbId] = useState<string | null>(templateId || null);
     const supabase = createClient();
@@ -163,12 +172,14 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
 
                             const sec = sectionMap.get(sectionMeta.id)!;
                             sec.questions.push({
-                                id: generateId(),
+                                id: q.id || generateId(),
                                 text: q.title,
                                 type: q.type as any,
+                                properties: q.properties || [q.type],
                                 required: q.is_required,
                                 weight: q.weight,
-                                mediaInstructions: q.instruction_media_url ? [{ id: generateId(), type: "image", url: q.instruction_media_url, caption: "" }] : [],
+                                optionItems: q.option_items || [],
+                                mediaInstructions: q.media_instructions || (q.instruction_media_url ? [{ id: generateId(), type: "image", url: q.instruction_media_url, caption: "" }] : []),
                                 conditionalRules: q.conditional_rules || [],
                                 order: q.order_index
                             });
@@ -257,6 +268,27 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
             if (s.id !== sectionId) return s;
             return { ...s, questions: s.questions.map((q) => q.id === questionId ? { ...q, ...updates } : q) };
         }));
+    };
+
+    const handleNewChecklist = () => {
+        setTemplateName("");
+        setSectorId("");
+        setScheduleConfig({
+            type: 'daily',
+            days: [],
+            time: '08:00',
+            deadline_time: '19:00',
+            start_date: new Date().toISOString().split('T')[0]
+        });
+        setSections([{
+            id: generateId(),
+            title: "Nova Seção",
+            icon: "🧹",
+            color: "#6366f1",
+            order: 0,
+            questions: [createDefaultQuestion(0)]
+        }]);
+        setCurrentTemplateDbId(null);
     };
 
     const handleSave = async () => {
@@ -348,6 +380,7 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
                 for (const q of section.questions) {
                     if (!q.text.trim()) continue; // Skip empty questions
                     questionsToInsert.push({
+                        id: q.id, // Explicit ID link for rules
                         template_id: savedTemplateId,
                         section: sectionData,
                         order_index: globalIndex++,
@@ -356,16 +389,37 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
                         is_required: q.required,
                         weight: q.weight,
                         conditional_rules: q.conditionalRules.length > 0 ? q.conditionalRules : null,
-                        instruction_media_url: q.mediaInstructions?.[0]?.url || null
+                        instruction_media_url: q.mediaInstructions?.[0]?.url || null,
+                        properties: q.properties || [q.type],
+                        option_items: q.optionItems && q.optionItems.length > 0 ? q.optionItems : null,
+                        media_instructions: q.mediaInstructions.length > 0 ? q.mediaInstructions : null,
                     });
                 }
             }
 
             if (questionsToInsert.length > 0) {
-                const { error: qsError } = await supabase.from("template_questions").insert(questionsToInsert);
-                if (qsError) {
-                    console.error("Erro ao inserir perguntas:", qsError);
-                    throw new Error(`Erro ao inserir perguntas: ${qsError.message}`);
+                for (const q of questionsToInsert) {
+                    try {
+                        // Tentar inserir com TODOS os campos
+                        const { error: qsError } = await supabase.from("template_questions").insert(q);
+
+                        if (qsError) {
+                            // Se for erro de coluna inexistente, tentar sem os campos novos
+                            const isColumnError = qsError.message?.toLowerCase().includes("column") ||
+                                qsError.code === "42703";
+
+                            if (isColumnError) {
+                                const { properties, option_items, media_instructions, ...fallbackQ } = q as any;
+                                const { error: fallbackError } = await supabase.from("template_questions").insert(fallbackQ);
+                                if (fallbackError) throw fallbackError;
+                            } else {
+                                throw qsError;
+                            }
+                        }
+                    } catch (err) {
+                        console.error("Erro ao salvar pergunta individual:", err);
+                        throw err;
+                    }
                 }
             }
 
@@ -479,6 +533,12 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
 
                                 {/* Action Buttons */}
                                 <div className="flex items-center gap-2 flex-wrap">
+                                    <button
+                                        onClick={handleNewChecklist}
+                                        className="px-3 py-2 bg-zinc-100 dark:bg-zinc-800 rounded-xl text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all flex items-center gap-1.5"
+                                    >
+                                        <Plus className="w-3.5 h-3.5" /> Novo
+                                    </button>
                                     <button onClick={() => setShowTemplates(true)} className="px-3 py-2 bg-zinc-100 dark:bg-zinc-800 rounded-xl text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all flex items-center gap-1.5">
                                         <Copy className="w-3.5 h-3.5" /> Templates
                                     </button>
@@ -557,10 +617,12 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
                                                                 {q.text || "Pergunta sem texto"}
                                                                 {q.required && <span className="text-red-400 ml-1">*</span>}
                                                             </p>
-                                                            <div className="flex items-center gap-2 mt-1.5">
-                                                                <span className="text-[10px] px-2 py-0.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-500 rounded-full">
-                                                                    {QUESTION_TYPE_CONFIG[q.type]?.icon} {QUESTION_TYPE_CONFIG[q.type]?.label}
-                                                                </span>
+                                                            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                                                                {(q.properties || [q.type]).map((prop: string) => (
+                                                                    <span key={prop} className="text-[10px] px-2 py-0.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-500 rounded-full flex items-center gap-1">
+                                                                        {(QUESTION_TYPE_CONFIG as any)[prop]?.icon} {(QUESTION_TYPE_CONFIG as any)[prop]?.label}
+                                                                    </span>
+                                                                ))}
                                                                 {q.weight > 1 && (
                                                                     <span className="text-[10px] px-2 py-0.5 bg-amber-100 dark:bg-amber-950 text-amber-600 rounded-full">
                                                                         Peso {q.weight}

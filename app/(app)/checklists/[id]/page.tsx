@@ -5,10 +5,11 @@ import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
     Loader2, CheckCircle2, ChevronLeft, ChevronRight,
-    Camera, AlertTriangle, Save, Play, X
+    Camera, AlertTriangle, Save, Play, X, Star, Paperclip
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { notifications } from "@/lib/notifications";
 
 interface Template {
     id: string;
@@ -34,21 +35,33 @@ interface Question {
     parsedSection: ParsedSection;
     is_required: boolean;
     weight: number;
+    properties?: string[];
+    option_items?: { label: string; score: number }[];
+    conditional_rules?: any[];
+    media_instructions?: { type: 'image' | 'video'; url: string; caption: string }[];
 }
 
-function parseSectionField(raw: string): ParsedSection {
+function parseSectionField(raw: any): ParsedSection {
     try {
-        const parsed = JSON.parse(raw);
+        if (!raw) return { id: "default", title: "Geral", order: 0 };
+        // Se já for um objeto, usa as propriedades dele
+        const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+
+        // Se por algum motivo o parse resultou em algo que não é objeto
+        if (typeof parsed !== 'object' || parsed === null) {
+            return { id: String(raw), title: String(raw), order: 0 };
+        }
+
         return {
-            id: parsed.id || "unknown",
+            id: parsed.id || String(parsed.title || "unknown"),
             title: parsed.title || "Seção",
             icon: parsed.icon,
             color: parsed.color,
             order: parsed.order ?? 0,
         };
     } catch {
-        // fallback: treat as plain string section name
-        return { id: raw, title: raw, order: 0 };
+        // Fallback para quando não é JSON válido
+        return { id: String(raw), title: String(raw), order: 0 };
     }
 }
 
@@ -64,16 +77,18 @@ export default function ChecklistExecutionPage() {
     const [userId, setUserId] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
-    const [answers, setAnswers] = useState<Record<string, { value: string; comment: string; has_issue: boolean }>>({});
 
-    // UI states
+    // Answers include photo references and individual option scores
+    const [answers, setAnswers] = useState<Record<string, {
+        value: string;
+        comment: string;
+        has_issue: boolean;
+        photo_url?: string;
+        attachment_url?: string;
+        option_score?: number;
+    }>>({});
+
     const [currentStep, setCurrentStep] = useState(0); // 0 = capa, 1...n = seções
-
-    useEffect(() => {
-        if (templateId) {
-            loadTemplateAndStart();
-        }
-    }, [templateId]);
 
     const loadTemplateAndStart = async () => {
         setIsLoading(true);
@@ -92,7 +107,7 @@ export default function ChecklistExecutionPage() {
             if (tplError) throw tplError;
             setTemplate(tplData);
 
-            // Fetch questions
+            // Fetch questions with all new columns
             const { data: qData, error: qError } = await supabase
                 .from('template_questions')
                 .select('*')
@@ -101,14 +116,17 @@ export default function ChecklistExecutionPage() {
 
             if (qError) throw qError;
 
-            // Parse section JSON for each question
             const parsedQuestions: Question[] = (qData || []).map((q: any) => ({
                 ...q,
                 parsedSection: parseSectionField(q.section),
+                properties: q.properties || [q.type], // Fallback to type if properties empty
+                option_items: q.option_items || [],
+                conditional_rules: q.conditional_rules || [],
+                media_instructions: q.media_instructions || []
             }));
             setQuestions(parsedQuestions);
 
-            // Check if there's an in_progress execution for this user and template
+            // Existing execution check
             const { data: existingExecution } = await supabase
                 .from('checklists')
                 .select('*')
@@ -121,7 +139,6 @@ export default function ChecklistExecutionPage() {
 
             if (existingExecution) {
                 setExecutionId(existingExecution.id);
-                // load existing answers
                 const { data: existingAnswers } = await supabase
                     .from('checklist_responses')
                     .select('*')
@@ -133,13 +150,15 @@ export default function ChecklistExecutionPage() {
                         loadedAnswers[ans.question_id] = {
                             value: ans.answer_value || "",
                             comment: ans.comment || "",
-                            has_issue: ans.has_issue || false
+                            has_issue: ans.has_issue || false,
+                            photo_url: ans.photo_url || "",
+                            attachment_url: ans.attachment_url || "",
+                            option_score: ans.option_score || 0
                         };
                     });
                     setAnswers(loadedAnswers);
                 }
             } else {
-                // start a new execution
                 const { data: newExecution, error: newExError } = await supabase
                     .from('checklists')
                     .insert({
@@ -157,20 +176,68 @@ export default function ChecklistExecutionPage() {
 
         } catch (error) {
             console.error("Erro ao carregar checklist:", error);
-            alert("Erro ao carregar checklist. Verifique sua conexão.");
+            alert("Erro ao carregar checklist.");
             router.push('/checklists');
         } finally {
             setIsLoading(false);
         }
     };
 
-    const handleAnswer = (questionId: string, value: string, has_issue: boolean = false) => {
+    useEffect(() => {
+        if (templateId) loadTemplateAndStart();
+    }, [templateId]);
+
+    useEffect(() => {
+        const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+            if (Object.keys(answers).length > 0) {
+                e.preventDefault();
+                e.returnValue = "";
+            }
+        };
+        window.addEventListener("beforeunload", handleBeforeUnload);
+        return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+    }, [answers]);
+
+    // Auto-save debounced
+    useEffect(() => {
+        const timer = setTimeout(async () => {
+            if (!executionId || Object.keys(answers).length === 0 || isSaving) return;
+            try {
+                const responsesArray = questions.filter(q => answers[q.id]?.value).map(q => {
+                    const ans = answers[q.id];
+                    return {
+                        checklist_id: executionId,
+                        question_id: q.id,
+                        answer_value: ans.value,
+                        comment: ans.comment || "",
+                        has_issue: ans.has_issue || false,
+                        photo_url: ans.photo_url || null,
+                        attachment_url: ans.attachment_url || null,
+                        option_score: ans.option_score || 0
+                    };
+                });
+                if (responsesArray.length > 0) {
+                    await supabase.from('checklist_responses').upsert(
+                        responsesArray.map(r => ({ ...r, id: undefined })), // let DB handle if we don't have PR
+                        { onConflict: 'checklist_id,question_id', ignoreDuplicates: false }
+                    );
+                }
+            } catch (err) { }
+        }, 1500);
+        return () => clearTimeout(timer);
+    }, [answers, executionId]);
+
+    const handleAnswer = (questionId: string, value: string, has_issue: boolean = false, optionScore: number = 0) => {
+        if (typeof window !== 'undefined' && window.navigator.vibrate) {
+            window.navigator.vibrate(15);
+        }
         setAnswers(prev => ({
             ...prev,
             [questionId]: {
                 ...prev[questionId],
                 value,
                 has_issue,
+                option_score: optionScore,
                 comment: prev[questionId]?.comment || "",
             }
         }));
@@ -188,47 +255,169 @@ export default function ChecklistExecutionPage() {
         }));
     };
 
-    // Build unique ordered sections from parsed section data
-    const sectionMap = new Map<string, ParsedSection>();
-    questions.forEach(q => {
-        if (!sectionMap.has(q.parsedSection.id)) {
-            sectionMap.set(q.parsedSection.id, q.parsedSection);
+    const handleFileUpload = async (questionId: string, file: File, type: 'photo_url' | 'attachment_url') => {
+        if (!executionId) return;
+        try {
+            const ext = file.name.split('.').pop();
+            const fileName = `responses/${executionId}/${questionId}_${type}_${Date.now()}.${ext}`;
+            const { error: uploadError } = await supabase.storage.from('public').upload(fileName, file);
+            if (uploadError) throw uploadError;
+
+            const { data: { publicUrl } } = supabase.storage.from('public').getPublicUrl(fileName);
+            setAnswers(prev => ({
+                ...prev,
+                [questionId]: { ...prev[questionId], [type]: publicUrl }
+            }));
+        } catch (err) {
+            console.warn("Erro no upload do bucket, tentando Base64:", err);
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const base64String = reader.result as string;
+                setAnswers(prev => ({
+                    ...prev,
+                    [questionId]: { ...prev[questionId], [type]: base64String }
+                }));
+            };
+            reader.readAsDataURL(file);
         }
-    });
-    const sections = Array.from(sectionMap.values()).sort((a, b) => a.order - b.order);
+    };
+
+    const evaluateCondition = (rule: any, answer: any): boolean => {
+        if (!answer || !answer.value) return false;
+        const val = answer.value;
+        const target = rule.compareValue || rule.triggerAnswer;
+
+        let match = false;
+        const valArray = typeof val === 'string' ? val.split(',') : [val];
+
+        switch (rule.operator) {
+            case 'greater_than': match = Number(val) > Number(target); break;
+            case 'less_than': match = Number(val) < Number(target); break;
+            case 'gte': match = Number(val) >= Number(target); break;
+            case 'lte': match = Number(val) <= Number(target); break;
+            case 'not_equals': match = !valArray.includes(target); break;
+            case 'equals':
+            default: match = valArray.includes(target); break;
+        }
+
+        if (match && rule.nestedRules?.length > 0) {
+            return rule.nestedRules.every((nr: any) => evaluateCondition(nr, answer));
+        }
+        return match;
+    };
+
+    // Use useMemo to avoid re-calculating complex logic on every render
+    const sections = (questions: Question[]) => {
+        const sectionMap = new Map<string, ParsedSection>();
+        questions.forEach(q => {
+            const sid = q.parsedSection.id;
+            if (!sectionMap.has(sid)) sectionMap.set(sid, q.parsedSection);
+        });
+        return Array.from(sectionMap.values()).sort((a, b) => a.order - b.order);
+    };
+
+    const calculatedSections = sections(questions);
+
+    const getVisibilityState = () => {
+        const visibleIds = new Set<string>();
+        const hiddenIds = new Set<string>();
+        const photoRequiredIds = new Set<string>();
+        const actionPlanRequiredIds = new Set<string>();
+
+        questions.forEach(q => {
+            const ans = answers[q.id];
+            q.conditional_rules?.forEach(rule => {
+                const match = evaluateCondition(rule, ans);
+                if (rule.action === 'show_questions' && rule.targetQuestionIds) {
+                    rule.targetQuestionIds.forEach((tId: string) => {
+                        hiddenIds.add(tId);
+                        if (match) visibleIds.add(tId);
+                    });
+                }
+                if (match) {
+                    if (rule.action === 'require_photo') photoRequiredIds.add(q.id);
+                    if (rule.action === 'create_action_plan') actionPlanRequiredIds.add(q.id);
+                }
+            });
+        });
+
+        return { visibleIds, hiddenIds, photoRequiredIds, actionPlanRequiredIds };
+    };
+
+    const { visibleIds, hiddenIds, photoRequiredIds, actionPlanRequiredIds } = getVisibilityState();
+
+    const isQuestionVisible = (qId: string) => {
+        return !hiddenIds.has(qId) || visibleIds.has(qId);
+    };
 
     const handleFinish = async () => {
         if (!executionId || !userId) return;
 
-        // Verifica se todas obrigatórias foram respondidas
-        const missingRequired = questions.filter(q => q.is_required && !answers[q.id]?.value);
-        if (missingRequired.length > 0) {
-            alert(`Faltam ${missingRequired.length} perguntas obrigatórias.`);
+        const missingRequirements: string[] = [];
+        const finalAnswers: any = {};
+
+        for (const q of questions) {
+            if (!isQuestionVisible(q.id)) continue;
+            const ans = answers[q.id];
+
+            const props = q.properties || [q.type];
+            const isOnlyPhoto = props.length === 1 && props[0] === 'photo';
+            const hasAnswer = ans?.value || (isOnlyPhoto && ans?.photo_url);
+
+            if (q.is_required && !hasAnswer) {
+                if (isOnlyPhoto) {
+                    missingRequirements.push(`- "${q.title}": Foto obrigatória`);
+                } else {
+                    missingRequirements.push(`- "${q.title}": Resposta obrigatória`);
+                }
+                continue;
+            }
+
+            if (hasAnswer) {
+                let requirePhoto = q.properties?.includes('photo') || false;
+                let requireActionPlan = false;
+
+                q.conditional_rules?.forEach(rule => {
+                    if (evaluateCondition(rule, ans)) {
+                        if (rule.action === 'require_photo') requirePhoto = true;
+                        if (rule.action === 'create_action_plan') requireActionPlan = true;
+                    }
+                });
+
+                if (requirePhoto && !ans.photo_url) {
+                    missingRequirements.push(`- "${q.title}": Foto obrigatória`);
+                }
+
+                const needsComment = ans.has_issue || requireActionPlan;
+                if (needsComment && (!ans.comment || ans.comment.trim() === '')) {
+                    missingRequirements.push(`- "${q.title}": Justificativa para plano de ação obrigatória`);
+                }
+
+                finalAnswers[q.id] = { ...ans, has_issue: needsComment };
+            }
+        }
+
+        if (missingRequirements.length > 0) {
+            alert(`Para concluir o checklist verifique as seguintes pendências:\n\n${missingRequirements.join('\n')}`);
             return;
         }
 
         setIsSaving(true);
         try {
-            // Save responses
-            const responsesArray = Object.keys(answers).map(qId => ({
+            const responsesArray = Object.entries(finalAnswers).map(([qId, ans]: [string, any]) => ({
                 checklist_id: executionId,
                 question_id: qId,
-                answer_value: answers[qId].value,
-                comment: answers[qId].comment,
-                has_issue: answers[qId].has_issue
+                answer_value: ans.value,
+                comment: ans.comment,
+                has_issue: ans.has_issue,
+                photo_url: ans.photo_url || null,
+                attachment_url: ans.attachment_url || null,
+                option_score: ans.option_score || 0
             }));
 
-            // Delete existing responses to re-insert
-            const { error: delError } = await supabase
-                .from('checklist_responses')
-                .delete()
-                .eq('checklist_id', executionId);
+            await supabase.from('checklist_responses').delete().eq('checklist_id', executionId);
 
-            if (delError) {
-                console.error("Erro ao limpar respostas:", delError);
-                throw new Error(`Erro ao limpar respostas: ${delError.message}`);
-            }
-
+            let insertedResponsesData = null;
             if (responsesArray.length > 0) {
                 const { data: insertedResponses, error: insError } = await supabase
                     .from('checklist_responses')
@@ -236,306 +425,436 @@ export default function ChecklistExecutionPage() {
                     .select();
 
                 if (insError) {
-                    console.error("Erro ao inserir respostas:", insError);
-                    throw new Error(`Erro ao inserir respostas: ${insError.message}`);
+                    const isColumnError = insError.message?.toLowerCase().includes("column") || insError.code === "42703";
+                    if (isColumnError) {
+                        // Retry sem option_score e converte photo_url e attachment_url para media_urls
+                        const fallbackResponses = responsesArray.map(({ option_score, photo_url, attachment_url, ...rest }) => ({
+                            ...rest,
+                            media_urls: [photo_url, attachment_url].filter(Boolean)
+                        }));
+
+                        try {
+                            const { data: retryData, error: retryError } = await supabase
+                                .from('checklist_responses')
+                                .insert(fallbackResponses)
+                                .select();
+                            if (retryError) throw retryError;
+                            insertedResponsesData = retryData;
+                        } catch (err: any) {
+                            if (err.message?.toLowerCase().includes("column") || err.code === "42703") {
+                                // Fallback final (sem photo_url e sem media_urls e sem option_score)
+                                const ultraFallback = fallbackResponses.map(({ media_urls, ...rest }) => rest);
+                                const { data: ultraData, error: ultraError } = await supabase
+                                    .from('checklist_responses')
+                                    .insert(ultraFallback)
+                                    .select();
+                                if (ultraError) throw ultraError;
+                                insertedResponsesData = ultraData;
+                            } else {
+                                throw err;
+                            }
+                        }
+                    } else {
+                        throw insError;
+                    }
+                } else {
+                    insertedResponsesData = insertedResponses;
                 }
 
-                // Cria Planos de Ação se tem itens marcados com problema
-                const issues = insertedResponses?.filter((r: any) => r.has_issue) || [];
-                if (issues.length > 0) {
-                    const actionPlans = issues.map((issue: any) => {
-                        const qInfo = questions.find(q => q.id === issue.question_id);
-                        return {
-                            checklist_response_id: issue.id,
-                            assignee_id: userId,
-                            title: `Não Conformidade: ${qInfo?.title}`,
-                            description: issue.comment || 'Item marcado como não conforme durante inspeção.',
-                            priority: 'High',
-                            status: 'Pendente'
-                        };
+                // Action plans for issues
+                const issues = insertedResponsesData?.filter((r: any) => r.has_issue) || [];
+                for (const issue of issues) {
+                    const q = questions.find(qu => qu.id === issue.question_id);
+                    await supabase.from('action_plans').insert({
+                        checklist_response_id: issue.id,
+                        assignee_id: userId,
+                        title: `Não Conformidade: ${q?.title}`,
+                        description: issue.comment || 'Nenhuma justificativa fornecida.',
+                        priority: 'high',
+                        status: 'pending'
                     });
-
-                    const { error: apError } = await supabase.from('action_plans').insert(actionPlans);
-                    if (apError) {
-                        console.warn("Aviso: erro ao criar planos de ação:", apError);
-                    }
                 }
             }
 
-            // Calcula o Score
+            // Notify Supervisor if needed
+            questions.forEach(q => {
+                const ans = answers[q.id];
+                q.conditional_rules?.forEach(rule => {
+                    if (evaluateCondition(rule, ans) && rule.action === 'notify_supervisor' && template) {
+                        notifications.notifySupervisor(
+                            template.title,
+                            q.title,
+                            `Gatilho condicional ativado (Resposta: ${ans.value})`
+                        );
+                    }
+                });
+            });
+
+            // Advanced Score Calculation
             let totalWeight = 0;
             let earnedWeight = 0;
             questions.forEach(q => {
-                totalWeight += q.weight || 1;
+                if (!isQuestionVisible(q.id)) return;
                 const ans = answers[q.id];
-                if (ans && ans.value === "yes") earnedWeight += q.weight || 1;
-                else if (ans && ans.value === "na") {
-                    totalWeight -= q.weight || 1; // Não se aplica, não conta
+                if (ans?.value === 'na') return;
+
+                const props = q.properties || [q.type];
+                if (props.includes('options') && q.option_items) {
+                    const maxScore = Math.max(...q.option_items.map(o => o.score || 0));
+                    totalWeight += maxScore || q.weight;
+                    earnedWeight += ans?.option_score || 0;
+                } else {
+                    totalWeight += q.weight || 1;
+                    if (ans?.value === 'yes') earnedWeight += q.weight || 1;
                 }
             });
 
             const score = totalWeight > 0 ? (earnedWeight / totalWeight) * 100 : 100;
 
-            // Finaliza o checklist
-            const { error: updError } = await supabase
-                .from('checklists')
-                .update({
-                    status: 'completed',
-                    completed_at: new Date().toISOString(),
-                    score: Math.round(score)
-                })
-                .eq('id', executionId);
+            await supabase.from('checklists').update({
+                status: 'completed',
+                completed_at: new Date().toISOString(),
+                score: Math.round(score)
+            }).eq('id', executionId);
 
-            if (updError) {
-                console.error("Erro ao finalizar checklist:", updError);
-                throw new Error(`Erro ao finalizar: ${updError.message}`);
-            }
-
-            // Gera log de atividade
-            const { error: logError } = await supabase.from('activity_logs').insert({
-                user_id: userId,
-                action_type: 'checklist_completed',
-                description: `Completou o checklist ${template?.title} com score de ${Math.round(score)}%`
-            });
-            if (logError) {
-                console.warn("Aviso: erro ao criar log de atividade:", logError);
-            }
-
-            // Redirect to success page with score info
-            const xpEarned = Math.round(score * 0.5); // XP based on score percentage
-            router.push(`/checklists/sucesso?score=${Math.round(score)}&earned=${earnedWeight}&total=${totalWeight}&xp=${xpEarned}&title=${encodeURIComponent(template?.title || 'Checklist')}`);
+            router.push(`/checklists/sucesso?score=${Math.round(score)}&earned=${earnedWeight}&total=${totalWeight}&xp=${Math.round(score * 0.5)}&title=${encodeURIComponent(template?.title || 'Checklist')}`);
         } catch (err: any) {
-            console.error("Erro ao finalizar:", err.message || err);
-            alert(`Erro ao salvar o checklist: ${err.message || 'Erro desconhecido'}`);
+            console.error("Erro completo ao salvar:", err, err?.message, err?.details);
+            const msg = err?.message || err?.details || JSON.stringify(err);
+            alert(`Erro ao salvar: ${msg}`);
         } finally {
             setIsSaving(false);
         }
     };
 
-    if (isLoading) {
-        return (
-            <div className="flex flex-col items-center justify-center min-h-[60vh]">
-                <Loader2 className="w-12 h-12 text-indigo-500 animate-spin mb-4" />
-                <p className="text-zinc-500 font-medium">Carregando checklist...</p>
-            </div>
-        );
-    }
+    if (isLoading) return <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-50 dark:bg-zinc-950"><Loader2 className="w-12 h-12 text-orange-500 animate-spin mb-4" /><p className="text-zinc-500 font-bold">CARREGANDO...</p></div>;
+    if (!template) return <div className="p-8 text-center text-zinc-500">Checklist não encontrado.</div>;
 
-    if (!template) {
-        return (
-            <div className="p-6 text-center text-zinc-500">
-                Checklist não encontrado.
-            </div>
-        );
-    }
+    const currentSection = currentStep === 0 ? null : calculatedSections[currentStep - 1];
+    const currentQuestions = currentStep === 0 ? [] : questions.filter(q => q.parsedSection.id === currentSection?.id && isQuestionVisible(q.id));
 
-    const currentSection = currentStep === 0 ? null : sections[currentStep - 1];
-    const currentSectionTitle = currentSection?.title || "Perguntas";
-    const currentSectionIcon = currentSection?.icon || "";
-    const currentSectionColor = currentSection?.color || "#6366f1";
-    const currentQuestions = currentStep === 0 ? [] : questions.filter(q => q.parsedSection.id === currentSection?.id);
-
-    const answeredCount = Object.keys(answers).filter(k => answers[k]?.value).length;
-    const progressPercentage = questions.length > 0 ? (answeredCount / questions.length) * 100 : 0;
+    const visibleQuestionsCount = questions.filter(q => isQuestionVisible(q.id)).length;
+    const answeredVisibleCount = questions.filter(q => isQuestionVisible(q.id) && answers[q.id]?.value).length;
+    const progressPercentage = visibleQuestionsCount > 0 ? (answeredVisibleCount / visibleQuestionsCount) * 100 : 0;
 
     return (
-        <div className="max-w-3xl mx-auto p-4 md:p-8 relative min-h-[85vh] flex flex-col">
-            {/* Header progressbar */}
-            <div className="mb-6 sticky top-0 z-10 bg-zinc-50 dark:bg-zinc-950 pb-4">
-                <div className="flex items-center justify-between mb-2">
-                    <button
-                        onClick={() => router.push('/checklists')}
-                        className="text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors flex items-center gap-1 text-sm font-medium"
-                    >
-                        <ChevronLeft className="w-4 h-4" /> Sair
+        <div className="max-w-3xl mx-auto p-4 md:p-8 min-h-screen flex flex-col bg-zinc-50 dark:bg-zinc-950">
+            {/* Nav Header */}
+            <div className="mb-6 sticky top-0 bg-zinc-50/80 dark:bg-zinc-950/80 backdrop-blur-md pb-4 z-20">
+                <div className="flex items-center justify-between mb-3">
+                    <button onClick={() => router.push('/checklists')} className="text-zinc-500 hover:text-zinc-900 flex items-center gap-1 font-bold text-xs uppercase tracking-tighter transition-all">
+                        <ChevronLeft className="w-4 h-4" /> Voltar
                     </button>
-                    <span className="text-sm font-bold text-zinc-500 dark:text-zinc-400">
-                        {Math.round(progressPercentage)}% concluído
-                    </span>
+                    <span className="text-[10px] font-black text-zinc-400 dark:text-zinc-600 uppercase tracking-widest">{Math.round(progressPercentage)}%</span>
                 </div>
-                <div className="w-full h-2.5 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden">
-                    <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${progressPercentage}%` }}
-                        className="h-full bg-indigo-500 rounded-full"
-                    />
+                <div className="h-1.5 w-full bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden">
+                    <motion.div animate={{ width: `${progressPercentage}%` }} className="h-full bg-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.5)] transition-all duration-500" />
                 </div>
             </div>
 
             <AnimatePresence mode="wait">
                 {currentStep === 0 ? (
-                    <motion.div
-                        key="intro"
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -20 }}
-                        className="flex-1 flex flex-col items-center justify-center text-center px-4"
-                    >
-                        <div className="w-20 h-20 bg-indigo-100 dark:bg-indigo-900/50 rounded-3xl flex items-center justify-center mb-6 shadow-xl">
-                            <CheckCircle2 className="w-10 h-10 text-indigo-600 dark:text-indigo-400" />
+                    <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 1.05 }} className="flex-1 flex flex-col items-center justify-center text-center py-12">
+                        <div className="w-24 h-24 bg-gradient-to-br from-orange-400 to-orange-600 rounded-[2.5rem] flex items-center justify-center mb-8 shadow-2xl shadow-orange-500/30 rotate-3">
+                            <CheckCircle2 className="w-12 h-12 text-white" />
                         </div>
-                        <h1 className="text-3xl font-black text-zinc-900 dark:text-white mb-2">
+                        <h1 className="text-4xl font-black text-zinc-900 dark:text-white mb-4 tracking-tight leading-tight uppercase">
                             {template.title}
                         </h1>
-                        <p className="text-zinc-500 dark:text-zinc-400 mb-8 max-w-md">
-                            {template.description || "Preencha as verificações atenta e seriamente para garantir a qualidade de nossa unidade."}
+                        <p className="text-zinc-500 dark:text-zinc-400 mb-12 max-w-sm font-medium">
+                            {template.description || "Inicie sua vistoria agora. Lembre-se de anexar fotos para itens não conformes."}
                         </p>
 
-                        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 rounded-2xl flex gap-6 text-left w-full max-w-md shadow-sm mb-10">
-                            <div>
-                                <p className="text-xs uppercase tracking-widest text-zinc-500 font-bold mb-1">Seções</p>
-                                <p className="font-semibold">{sections.length}</p>
+                        <div className="grid grid-cols-3 gap-4 w-full max-w-sm mb-12">
+                            <div className="bg-white dark:bg-zinc-900 p-4 rounded-3xl border border-zinc-100 dark:border-zinc-800 shadow-sm">
+                                <p className="text-[10px] uppercase font-black text-zinc-400 mb-1">Items</p>
+                                <p className="text-xl font-black">{questions.length}</p>
                             </div>
-                            <div>
-                                <p className="text-xs uppercase tracking-widest text-zinc-500 font-bold mb-1">Perguntas</p>
-                                <p className="font-semibold">{questions.length}</p>
+                            <div className="bg-white dark:bg-zinc-900 p-4 rounded-3xl border border-zinc-100 dark:border-zinc-800 shadow-sm">
+                                <p className="text-[10px] uppercase font-black text-zinc-400 mb-1">Seções</p>
+                                <p className="text-xl font-black">{sections.length}</p>
                             </div>
-                            <div>
-                                <p className="text-xs uppercase tracking-widest text-zinc-500 font-bold mb-1">Tempo Est.</p>
-                                <p className="font-semibold">{template.estimated_minutes || Math.ceil(questions.length * 0.5)} min</p>
+                            <div className="bg-white dark:bg-zinc-900 p-4 rounded-3xl border border-zinc-100 dark:border-zinc-800 shadow-sm">
+                                <p className="text-[10px] uppercase font-black text-zinc-400 mb-1">Tempo</p>
+                                <p className="text-xl font-black">~{template.estimated_minutes || 10}'</p>
                             </div>
                         </div>
 
                         <button
                             onClick={() => setCurrentStep(1)}
-                            className="bg-indigo-600 text-white hover:bg-indigo-700 px-8 py-3 rounded-xl font-bold flex items-center gap-2 transition-all shadow-lg hover:shadow-indigo-500/25"
+                            className="bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 px-12 py-5 rounded-[2rem] font-black text-lg flex items-center gap-3 transition-all hover:scale-105 active:scale-95 shadow-xl shadow-zinc-500/20 dark:shadow-none"
                         >
-                            <Play className="w-5 h-5" /> Começar Inspeção
+                            <Play className="w-6 h-6 fill-current" /> INICIAR
                         </button>
                     </motion.div>
                 ) : (
-                    <motion.div
-                        key={`section-${currentStep}`}
-                        initial={{ opacity: 0, x: 20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: -20 }}
-                        className="flex-1 flex flex-col"
-                    >
-                        <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-50 mb-6 flex items-center gap-2">
-                            <span
-                                className="w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0"
-                                style={{ backgroundColor: currentSectionColor + '20', color: currentSectionColor }}
-                            >
-                                {currentSectionIcon || currentStep}
-                            </span>
-                            {currentSectionTitle}
-                        </h2>
+                    <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="flex-1 pb-32">
+                        <div className="flex items-center gap-4 mb-8">
+                            <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-xl shadow-sm" style={{ backgroundColor: currentSection?.color + '20', color: currentSection?.color }}>
+                                {currentSection?.icon || "★"}
+                            </div>
+                            <div>
+                                <h2 className="text-2xl font-black text-zinc-900 dark:text-white uppercase tracking-tighter">
+                                    {currentSection?.title}
+                                </h2>
+                                <p className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Seção {currentStep} de {sections.length}</p>
+                            </div>
+                        </div>
 
-                        <div className="space-y-6 pb-24">
+                        <div className="space-y-6">
                             {currentQuestions.map(q => {
                                 const ans = answers[q.id];
+                                const props = q.properties || [q.type];
+                                const media = q.media_instructions || [];
+
+                                // Conditional requirements
+                                const conditionalPhotoRequired = props.includes('photo') || photoRequiredIds.has(q.id);
+                                const conditionalActionPlanRequired = actionPlanRequiredIds.has(q.id);
+
                                 return (
-                                    <div key={q.id} className="bg-white dark:bg-zinc-950 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
-                                        <div className="flex gap-3 mb-4">
-                                            {q.is_required && <span className="text-rose-500 font-bold mt-1">*</span>}
-                                            <p className="font-semibold text-zinc-900 dark:text-zinc-100">{q.title}</p>
+                                    <div key={q.id} className="bg-white dark:bg-zinc-900 p-6 rounded-[2.5rem] border border-zinc-100 dark:border-zinc-800 shadow-sm transition-all hover:border-zinc-200 dark:hover:border-zinc-700">
+                                        <div className="flex items-start gap-3 mb-5">
+                                            {q.is_required && <span className="text-orange-500 font-black text-xl mt-[-4px] leading-none">*</span>}
+                                            <h4 className="font-bold text-zinc-900 dark:text-zinc-100 leading-snug">{q.title}</h4>
                                         </div>
 
-                                        {(q.type === 'yes_no' || q.type === 'conforme') && (
-                                            <div className="grid grid-cols-3 gap-2 mb-3">
-                                                <button
-                                                    onClick={() => handleAnswer(q.id, 'yes', false)}
-                                                    className={cn("py-3 rounded-xl border text-sm font-bold transition-all", ans?.value === 'yes' ? "bg-emerald-500 border-emerald-500 text-white shadow-md shadow-emerald-500/20" : "bg-zinc-50 border-zinc-200 dark:bg-zinc-900 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400")}
-                                                >
-                                                    Conforme
-                                                </button>
-                                                <button
-                                                    onClick={() => handleAnswer(q.id, 'no', true)}
-                                                    className={cn("py-3 rounded-xl border text-sm font-bold transition-all", ans?.value === 'no' ? "bg-rose-500 border-rose-500 text-white shadow-md shadow-rose-500/20" : "bg-zinc-50 border-zinc-200 dark:bg-zinc-900 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400")}
-                                                >
-                                                    NC
-                                                </button>
-                                                <button
-                                                    onClick={() => handleAnswer(q.id, 'na', false)}
-                                                    className={cn("py-3 rounded-xl border text-sm font-bold transition-all", ans?.value === 'na' ? "bg-zinc-700 border-zinc-700 text-white shadow-md shadow-zinc-500/20" : "bg-zinc-50 border-zinc-200 dark:bg-zinc-900 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400")}
-                                                >
-                                                    N/A
-                                                </button>
-                                            </div>
-                                        )}
-
-                                        {q.type === 'text' && (
-                                            <textarea
-                                                value={ans?.value || ""}
-                                                onChange={(e) => handleAnswer(q.id, e.target.value)}
-                                                className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-3"
-                                                placeholder="Digite sua resposta..."
-                                                rows={3}
-                                            />
-                                        )}
-
-                                        {q.type === 'number' && (
-                                            <input
-                                                type="number"
-                                                value={ans?.value || ""}
-                                                onChange={(e) => handleAnswer(q.id, e.target.value)}
-                                                className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-3"
-                                                placeholder="Digite o valor..."
-                                            />
-                                        )}
-
-                                        {q.type === 'rating' && (
-                                            <div className="flex gap-2 mb-3">
-                                                {[1, 2, 3, 4, 5].map(star => (
-                                                    <button
-                                                        key={star}
-                                                        onClick={() => handleAnswer(q.id, String(star))}
-                                                        className={cn(
-                                                            "w-12 h-12 rounded-xl border text-lg font-bold transition-all",
-                                                            Number(ans?.value) >= star
-                                                                ? "bg-amber-400 border-amber-400 text-white shadow-md"
-                                                                : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
-                                                        )}
-                                                    >
-                                                        ⭐
-                                                    </button>
+                                        {/* Media Reference */}
+                                        {media.length > 0 && (
+                                            <div className="mb-5 flex gap-3 overflow-x-auto pb-2 -mx-1 scrollbar-none">
+                                                {media.map((m, mIdx) => (
+                                                    <div key={mIdx} className="shrink-0 group relative cursor-pointer" onClick={() => window.open(m.url, '_blank')}>
+                                                        <div className="w-40 aspect-video rounded-2xl overflow-hidden bg-zinc-100 dark:bg-zinc-800 border-2 border-zinc-50 dark:border-zinc-800">
+                                                            {m.type === 'image' ? (
+                                                                <img src={m.url} className="w-full h-full object-cover" alt={m.caption} />
+                                                            ) : (
+                                                                <div className="w-full h-full flex items-center justify-center bg-zinc-950 text-white"><Play className="w-8 h-8 fill-white/20" /></div>
+                                                            )}
+                                                        </div>
+                                                        <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/80 to-transparent text-[8px] font-bold text-white uppercase opacity-0 group-hover:opacity-100 transition-all rounded-b-2xl">
+                                                            {m.caption || "Referência"}
+                                                        </div>
+                                                    </div>
                                                 ))}
                                             </div>
                                         )}
 
-                                        {q.type === 'multiple_choice' && (
-                                            <div className="grid grid-cols-2 gap-2 mb-3">
-                                                {["Opção A", "Opção B", "Opção C", "Opção D"].map(opt => (
-                                                    <button
-                                                        key={opt}
-                                                        onClick={() => handleAnswer(q.id, opt)}
+                                        <div className="space-y-5">
+                                            {props.includes('yes_no') && (
+                                                <div className="grid grid-cols-3 gap-2">
+                                                    {[
+                                                        { v: 'yes', l: 'SIM', c: 'bg-emerald-500' },
+                                                        { v: 'no', l: 'NÃO', c: 'bg-rose-500' },
+                                                        { v: 'na', l: 'N/A', c: 'bg-zinc-600' }
+                                                    ].map(btn => (
+                                                        <button
+                                                            key={btn.v}
+                                                            onClick={() => handleAnswer(q.id, btn.v, btn.v === 'no')}
+                                                            className={cn(
+                                                                "py-4 rounded-2xl border-2 font-black text-xs transition-all flex flex-col items-center justify-center gap-1",
+                                                                ans?.value === btn.v
+                                                                    ? `${btn.c} border-transparent text-white shadow-lg shadow-${btn.v === 'yes' ? 'emerald' : btn.v === 'no' ? 'rose' : 'zinc'}-500/30 scale-[1.02]`
+                                                                    : "bg-zinc-50 dark:bg-zinc-800/50 border-zinc-100 dark:border-zinc-800 text-zinc-400"
+                                                            )}
+                                                        >
+                                                            {btn.l}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            {(props.includes('options') || props.includes('multiple_selection')) && q.option_items && q.option_items.length > 0 && (
+                                                <div className="grid grid-cols-1 gap-2">
+                                                    {q.option_items.map((opt, oIdx) => {
+                                                        const isSelected = props.includes('multiple_selection')
+                                                            ? (ans?.value || "").split(',').includes(opt.label)
+                                                            : ans?.value === opt.label;
+
+                                                        return (
+                                                            <button
+                                                                key={oIdx}
+                                                                onClick={() => {
+                                                                    if (props.includes('multiple_selection')) {
+                                                                        const currentVals = (ans?.value || "").split(',').filter(Boolean);
+                                                                        let newVals = [];
+                                                                        let newScore = ans?.option_score || 0;
+                                                                        if (currentVals.includes(opt.label)) {
+                                                                            newVals = currentVals.filter(v => v !== opt.label);
+                                                                            newScore -= opt.score;
+                                                                        } else {
+                                                                            newVals = [...currentVals, opt.label];
+                                                                            newScore += opt.score;
+                                                                        }
+                                                                        handleAnswer(q.id, newVals.join(','), false, newScore);
+                                                                    } else {
+                                                                        handleAnswer(q.id, opt.label, false, opt.score);
+                                                                    }
+                                                                }}
+                                                                className={cn(
+                                                                    "p-4 rounded-2xl border-2 font-bold text-sm transition-all flex justify-between items-center text-left",
+                                                                    isSelected
+                                                                        ? "bg-orange-500 border-transparent text-white shadow-xl shadow-orange-500/20"
+                                                                        : "bg-zinc-50 dark:bg-zinc-800/50 border-zinc-100 dark:border-zinc-800 text-zinc-500"
+                                                                )}
+                                                            >
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className={cn(
+                                                                        "w-5 h-5 flex items-center justify-center shrink-0 border-2",
+                                                                        props.includes('multiple_selection') ? "rounded-md" : "rounded-full",
+                                                                        isSelected ? "border-white bg-white/20" : "border-zinc-300 dark:border-zinc-600"
+                                                                    )}>
+                                                                        {isSelected && <CheckCircle2 className="w-3 h-3 text-white" />}
+                                                                    </div>
+                                                                    <span>{opt.label}</span>
+                                                                </div>
+                                                                <span className={cn("text-[10px] font-black px-2 py-1 rounded-full", isSelected ? "bg-white/20 text-white" : "bg-zinc-200 dark:bg-zinc-700 text-zinc-500")}>
+                                                                    {opt.score} pts
+                                                                </span>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+
+                                            {props.includes('number') && (
+                                                <div className="relative">
+                                                    <input
+                                                        type="number"
+                                                        value={ans?.value || ""}
+                                                        onChange={(e) => handleAnswer(q.id, e.target.value)}
+                                                        className="w-full bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 text-xl font-bold focus:ring-2 focus:ring-orange-500 outline-none"
+                                                        placeholder="0"
+                                                    />
+                                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col pointer-events-none text-zinc-400">
+                                                        <span className="text-[10px] font-bold uppercase">VALOR</span>
+                                                        <span className="text-[10px] font-bold uppercase">NUMÉRICO</span>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {props.includes('rating') && (
+                                                <div className="flex gap-2">
+                                                    {[1, 2, 3, 4, 5].map((star) => {
+                                                        const currentVal = parseInt(ans?.value || "0");
+                                                        const isActive = star <= currentVal;
+
+                                                        return (
+                                                            <button
+                                                                key={star}
+                                                                onClick={() => handleAnswer(q.id, star.toString(), false, star)}
+                                                                className={cn(
+                                                                    "flex-1 py-4 rounded-2xl border-2 transition-all flex justify-center items-center",
+                                                                    isActive
+                                                                        ? "bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/30 scale-105"
+                                                                        : "bg-zinc-50 dark:bg-zinc-800/50 border-zinc-100 dark:border-zinc-800 text-zinc-300 hover:border-amber-200 dark:hover:border-amber-800"
+                                                                )}
+                                                            >
+                                                                <Star className={cn("w-6 h-6", isActive ? "fill-white text-white" : "fill-transparent")} />
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+
+                                            <div className="flex gap-3 mt-4">
+                                                {/* Upload Foto */}
+                                                <div className="flex-1 relative">
+                                                    <input
+                                                        type="file"
+                                                        accept="image/*"
+                                                        capture="environment"
+                                                        className="hidden"
+                                                        id={`cam-${q.id}`}
+                                                        onChange={(e) => {
+                                                            const f = e.target.files?.[0];
+                                                            if (f) handleFileUpload(q.id, f, 'photo_url');
+                                                        }}
+                                                    />
+                                                    <label
+                                                        htmlFor={`cam-${q.id}`}
                                                         className={cn(
-                                                            "py-3 px-4 rounded-xl border text-sm font-medium transition-all text-left",
-                                                            ans?.value === opt
-                                                                ? "bg-indigo-500 border-indigo-500 text-white shadow-md"
-                                                                : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
+                                                            "w-full py-3 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-1 cursor-pointer transition-all active:scale-[0.98]",
+                                                            ans?.photo_url
+                                                                ? "bg-emerald-50 dark:bg-emerald-900/10 border-emerald-200 dark:border-emerald-800"
+                                                                : conditionalPhotoRequired && !(ans?.photo_url) ? "bg-orange-50 border-orange-200 dark:bg-orange-900/20 dark:border-orange-800/50" : "bg-zinc-50 dark:bg-zinc-800/50 border-zinc-200 dark:border-zinc-800"
                                                         )}
                                                     >
-                                                        {opt}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        )}
+                                                        {ans?.photo_url ? (
+                                                            <>
+                                                                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                                                                <span className="text-[10px] text-emerald-600 font-black tracking-widest uppercase mt-1">FOTO OK</span>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <Camera className={cn("w-5 h-5 transition-colors", conditionalPhotoRequired ? "text-orange-500" : "text-zinc-400 group-hover:text-amber-500")} />
+                                                                <span className={cn("text-[9px] font-black uppercase tracking-widest text-center", conditionalPhotoRequired ? "text-orange-600 font-bold" : "text-zinc-500")}>
+                                                                    IMAGEM {conditionalPhotoRequired && <span className="text-orange-600 text-[12px]">*</span>}
+                                                                </span>
+                                                            </>
+                                                        )}
+                                                    </label>
+                                                </div>
 
-                                        {ans?.value === 'no' && (
-                                            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mb-3">
-                                                <p className="text-xs font-bold text-rose-500 mb-1 flex items-center gap-1">
-                                                    <AlertTriangle className="w-3 h-3" /> Justificar Não Conformidade Obrigatória
-                                                </p>
+                                                {/* Upload Anexo */}
+                                                <div className="flex-1 relative">
+                                                    <input
+                                                        type="file"
+                                                        className="hidden"
+                                                        id={`attach-${q.id}`}
+                                                        onChange={(e) => {
+                                                            const f = e.target.files?.[0];
+                                                            if (f) handleFileUpload(q.id, f, 'attachment_url');
+                                                        }}
+                                                    />
+                                                    <label
+                                                        htmlFor={`attach-${q.id}`}
+                                                        className={cn(
+                                                            "w-full py-3 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-1 cursor-pointer transition-all active:scale-[0.98]",
+                                                            ans?.attachment_url
+                                                                ? "bg-indigo-50 dark:bg-indigo-900/10 border-indigo-200 dark:border-indigo-800"
+                                                                : "bg-zinc-50 dark:bg-zinc-800/50 border-zinc-200 dark:border-zinc-800"
+                                                        )}
+                                                    >
+                                                        {ans?.attachment_url ? (
+                                                            <>
+                                                                <CheckCircle2 className="w-5 h-5 text-indigo-600" />
+                                                                <span className="text-[10px] text-indigo-600 font-black tracking-widest uppercase mt-1">ANEXO OK</span>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <Paperclip className="w-5 h-5 text-zinc-400 transition-colors" />
+                                                                <span className="text-[9px] font-black uppercase tracking-widest text-center text-zinc-500">
+                                                                    ANEXAR PDF/DOC
+                                                                </span>
+                                                            </>
+                                                        )}
+                                                    </label>
+                                                </div>
+                                            </div>
+
+                                            {props.includes('text') && (
                                                 <textarea
-                                                    value={ans?.comment || ""}
-                                                    onChange={(e) => handleComment(q.id, e.target.value)}
-                                                    className="w-full bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/50 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
-                                                    placeholder="Descreva o problema encontrado e qual ação deve ser tomada..."
-                                                    rows={2}
+                                                    value={ans?.value || ""}
+                                                    onChange={(e) => handleAnswer(q.id, e.target.value)}
+                                                    className="w-full bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 text-sm focus:ring-2 focus:ring-orange-500 outline-none min-h-[100px]"
+                                                    placeholder="Digite sua resposta detalhada aqui..."
                                                 />
-                                            </motion.div>
-                                        )}
+                                            )}
 
-                                        {!ans?.has_issue && ans?.value && (
-                                            <input
-                                                type="text"
-                                                value={ans?.comment || ""}
-                                                onChange={(e) => handleComment(q.id, e.target.value)}
-                                                placeholder="Adicionar observação opcional..."
-                                                className="w-full bg-transparent border-b border-zinc-200 dark:border-zinc-800 px-1 py-2 text-xs focus:outline-none focus:border-indigo-500"
-                                            />
-                                        )}
+                                            {(ans?.has_issue || conditionalActionPlanRequired) && (
+                                                <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="p-4 bg-rose-50 dark:bg-rose-950/20 rounded-2xl border border-rose-100 dark:border-rose-900/50">
+                                                    <p className="text-[10px] font-black text-rose-500 uppercase tracking-wider mb-2 flex items-center gap-1">
+                                                        <AlertTriangle className="w-3 h-3" /> Justificar {(ans?.has_issue || conditionalActionPlanRequired) && "e Plano de Ação"}
+                                                    </p>
+                                                    <textarea
+                                                        value={ans?.comment || ""}
+                                                        onChange={(e) => handleComment(q.id, e.target.value)}
+                                                        className="w-full bg-transparent p-0 text-sm focus:outline-none placeholder:text-rose-300 dark:placeholder:text-rose-800"
+                                                        placeholder="O que está errado? Qual o plano de ação sugerido?..."
+                                                        rows={2}
+                                                    />
+                                                </motion.div>
+                                            )}
+                                        </div>
                                     </div>
                                 );
                             })}
@@ -544,35 +863,37 @@ export default function ChecklistExecutionPage() {
                 )}
             </AnimatePresence>
 
-            {/* Navigation Bottom Bar */}
-            {currentStep > 0 && (
-                <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md border-t border-zinc-200 dark:border-zinc-800 z-20 flex justify-between gap-4 md:max-w-3xl md:mx-auto">
-                    <button
-                        onClick={() => setCurrentStep(currentStep - 1)}
-                        className="px-6 py-3 rounded-xl font-bold bg-zinc-100 text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-800 flex items-center gap-2"
-                    >
-                        <ChevronLeft className="w-5 h-5" /> Anterior
-                    </button>
+            {/* Bottom Nav */}
+            <div className="fixed bottom-0 left-0 right-0 p-6 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-2xl border-t border-zinc-100 dark:border-zinc-800 z-30">
+                <div className="max-w-3xl mx-auto flex gap-4">
+                    {currentStep > 0 && (
+                        <button
+                            onClick={() => setCurrentStep(currentStep - 1)}
+                            className="p-5 rounded-[1.5rem] bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-200 text-zinc-600 transition-all font-bold"
+                        >
+                            <ChevronLeft className="w-6 h-6" />
+                        </button>
+                    )}
 
                     {currentStep < sections.length ? (
                         <button
                             onClick={() => setCurrentStep(currentStep + 1)}
-                            className="px-6 py-3 rounded-xl font-bold bg-indigo-600 text-white hover:bg-indigo-700 flex items-center gap-2 shadow-lg hover:shadow-indigo-500/25 flex-1 justify-center"
+                            className="flex-1 py-5 bg-zinc-900 dark:bg-orange-600 text-white font-black rounded-[1.5rem] shadow-xl shadow-zinc-500/20 dark:shadow-orange-500/20 flex items-center justify-center gap-2 hover:translate-y-[-2px] active:translate-y-0 transition-all"
                         >
-                            Próxima Seção <ChevronRight className="w-5 h-5" />
+                            PRÓXIMA SEÇÃO <ChevronRight className="w-5 h-5" />
                         </button>
                     ) : (
                         <button
                             onClick={handleFinish}
                             disabled={isSaving}
-                            className="px-6 py-3 rounded-xl font-bold bg-emerald-500 text-white hover:bg-emerald-600 flex items-center gap-2 shadow-lg hover:shadow-emerald-500/25 flex-1 justify-center disabled:opacity-75 disabled:cursor-not-allowed"
+                            className="flex-1 py-5 bg-emerald-500 text-white font-black rounded-[1.5rem] shadow-xl shadow-emerald-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                         >
-                            {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-                            {isSaving ? "Salvando..." : "Finalizar Checklist"}
+                            {isSaving ? <Loader2 className="w-6 h-6 animate-spin" /> : <Save className="w-6 h-6" />}
+                            {isSaving ? "FINALIZANDO..." : "CONCLUIR CHECKLIST"}
                         </button>
                     )}
                 </div>
-            )}
+            </div>
         </div>
     );
 }

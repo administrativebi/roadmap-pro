@@ -42,6 +42,7 @@ const navItems = [
         children: [
             { href: "/checklists/dashboard", label: "Dashboard", icon: BarChart3 },
             { href: "/checklists", label: "Realizar", icon: ClipboardCheck },
+            { href: "/checklists/history", label: "Histórico", icon: ClipboardList },
             { href: "/builder", label: "Construtor", icon: Hammer },
         ]
     },

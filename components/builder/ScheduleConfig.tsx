@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     X, Calendar, Clock, Repeat, Bell,
@@ -19,6 +19,7 @@ export interface ScheduleConfig {
     deadline_time: string;
     notify_before_minutes: number;
     auto_create: boolean;
+    skip_holidays: boolean;
 }
 
 const DEFAULT_SCHEDULE: ScheduleConfig = {
@@ -31,6 +32,7 @@ const DEFAULT_SCHEDULE: ScheduleConfig = {
     deadline_time: "",
     notify_before_minutes: 60,
     auto_create: true,
+    skip_holidays: false,
 };
 
 const RECURRENCE_OPTIONS = [
@@ -115,7 +117,7 @@ export function ScheduleConfigModal({ config, onChange, onClose }: ScheduleConfi
                 animate={{ scale: 1, y: 0 }}
                 exit={{ scale: 0.95, y: 20 }}
                 className="w-full max-w-lg bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl max-h-[85vh] overflow-y-auto"
-                onClick={e => e.stopPropagation()}
+                onClick={(e: React.MouseEvent) => e.stopPropagation()}
             >
                 {/* Header */}
                 <div className="p-5 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between sticky top-0 bg-white dark:bg-zinc-900 z-10">
@@ -154,6 +156,33 @@ export function ScheduleConfigModal({ config, onChange, onClose }: ScheduleConfi
                                 local.enabled ? "left-6" : "left-1"
                             )} />
                         </button>
+                    </div>
+
+                    {/* Quick Presets */}
+                    <div className="space-y-3">
+                        <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-1.5">
+                            <Zap className="w-3.5 h-3.5 text-amber-500" /> Presets Rápidos
+                        </label>
+                        <div className="flex gap-2 flex-wrap">
+                            <button
+                                onClick={() => update({ recurrence: 'daily', deadline_time: '19:00', enabled: true })}
+                                className="px-3 py-2 rounded-xl bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 text-[10px] font-bold text-orange-600 dark:text-orange-400 hover:bg-orange-100 transition-all"
+                            >
+                                Diário às 19:00
+                            </button>
+                            <button
+                                onClick={() => update({ recurrence: 'weekly', days_of_week: [1, 2, 3, 4, 5], deadline_time: '18:00', enabled: true })}
+                                className="px-3 py-2 rounded-xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-100 transition-all"
+                            >
+                                Seg a Sex às 18:00
+                            </button>
+                            <button
+                                onClick={() => update({ recurrence: 'monthly', day_of_month: 1, deadline_time: '12:00', enabled: true })}
+                                className="px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 transition-all"
+                            >
+                                Todo dia 1º
+                            </button>
+                        </div>
                     </div>
 
                     {local.enabled && (
@@ -257,7 +286,7 @@ export function ScheduleConfigModal({ config, onChange, onClose }: ScheduleConfi
                                 <input
                                     type="time"
                                     value={local.deadline_time}
-                                    onChange={e => update({ deadline_time: e.target.value })}
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => update({ deadline_time: e.target.value })}
                                     className="w-full px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-500"
                                 />
                             </div>
@@ -271,7 +300,7 @@ export function ScheduleConfigModal({ config, onChange, onClose }: ScheduleConfi
                                     <input
                                         type="date"
                                         value={local.start_date}
-                                        onChange={e => update({ start_date: e.target.value })}
+                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => update({ start_date: e.target.value })}
                                         className="w-full px-3 py-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
                                     />
                                 </div>
@@ -282,7 +311,7 @@ export function ScheduleConfigModal({ config, onChange, onClose }: ScheduleConfi
                                     <input
                                         type="date"
                                         value={local.end_date}
-                                        onChange={e => update({ end_date: e.target.value })}
+                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => update({ end_date: e.target.value })}
                                         className="w-full px-3 py-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
                                     />
                                 </div>
@@ -327,6 +356,26 @@ export function ScheduleConfigModal({ config, onChange, onClose }: ScheduleConfi
                                     <div className={cn(
                                         "w-5 h-5 bg-white rounded-full absolute top-1 transition-all shadow-sm",
                                         local.auto_create ? "left-6" : "left-1"
+                                    )} />
+                                </button>
+                            </div>
+
+                            {/* Skip Holidays */}
+                            <div className="flex items-center justify-between border-t border-zinc-100 dark:border-zinc-800 pt-5">
+                                <div>
+                                    <p className="font-bold text-sm text-zinc-900 dark:text-zinc-50">Ignorar Feriados</p>
+                                    <p className="text-[10px] text-zinc-400">Não lançar o checklist em feriados nacionais</p>
+                                </div>
+                                <button
+                                    onClick={() => update({ skip_holidays: !local.skip_holidays })}
+                                    className={cn(
+                                        "w-12 h-7 rounded-full transition-all relative",
+                                        local.skip_holidays ? "bg-amber-500" : "bg-zinc-300 dark:bg-zinc-600"
+                                    )}
+                                >
+                                    <div className={cn(
+                                        "w-5 h-5 bg-white rounded-full absolute top-1 transition-all shadow-sm",
+                                        local.skip_holidays ? "left-6" : "left-1"
                                     )} />
                                 </button>
                             </div>

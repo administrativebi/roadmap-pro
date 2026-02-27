@@ -113,11 +113,15 @@ export function TemplateManager({ onClose, onLoad }: TemplateManagerProps) {
                             type: q.type as any,
                             required: q.is_required,
                             weight: q.weight,
-                            mediaInstructions: [],
+                            mediaInstructions: Array.isArray(q.media_instructions) ? q.media_instructions : (q.instruction_media_url ? [{ type: 'image', url: q.instruction_media_url }] : []),
                             conditionalRules: q.conditional_rules || [],
+                            properties: q.properties || [q.type],
+                            optionItems: q.option_items || [],
                             order: q.order_index,
                         });
-                    } catch { }
+                    } catch (err) {
+                        console.error("Erro ao processar questão:", err);
+                    }
                 }
 
                 const loadedSections = Array.from(sectionMap.values()).sort((a, b) => a.order - b.order);

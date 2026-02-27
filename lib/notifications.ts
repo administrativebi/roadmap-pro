@@ -81,6 +81,14 @@ export const notifications = {
             tag: "schedule-reminder",
             data: { url: "/schedule" },
         }),
+
+    notifySupervisor: (tplTitle: string, questionTitle: string, reason: string) =>
+        sendLocalNotification("⚠️ Alerta p/ Supervisor", {
+            body: `Não conformidade crítica em "${tplTitle}": ${questionTitle}. Motivo: ${reason}`,
+            tag: "supervisor-alert",
+            requireInteraction: true,
+            data: { url: "/manager" },
+        }),
 };
 
 // Helper: Convert VAPID key
