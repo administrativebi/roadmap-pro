@@ -27,6 +27,8 @@ import {
     Swords,
     ScanLine,
     ShieldPlus,
+    ChevronDown,
+    ChevronRight,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
@@ -34,8 +36,15 @@ import { useEffect, useState } from "react";
 
 const navItems = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/checklists", label: "Checklists", icon: ClipboardCheck },
-    { href: "/builder", label: "Construtor", icon: Hammer },
+    {
+        label: "Checklist",
+        icon: ClipboardCheck,
+        children: [
+            { href: "/checklists/dashboard", label: "Dashboard", icon: BarChart3 },
+            { href: "/checklists", label: "Realizar", icon: ClipboardCheck },
+            { href: "/builder", label: "Construtor", icon: Hammer },
+        ]
+    },
     { href: "/schedule", label: "Agenda", icon: CalendarDays },
     { href: "/ranking", label: "Ranking", icon: Trophy },
     { href: "/action-plans", label: "Planos de Ação", icon: Lightbulb },
@@ -60,6 +69,7 @@ export function Sidebar() {
     const router = useRouter();
     const supabase = createClient();
     const [profile, setProfile] = useState<any>(null);
+    const [expandedMenu, setExpandedMenu] = useState<string>("Checklist"); // Starts open if desired
 
     useEffect(() => {
         async function loadProfile() {
@@ -80,6 +90,14 @@ export function Sidebar() {
         await supabase.auth.signOut();
         router.push("/login");
         router.refresh();
+    };
+
+    const toggleMenu = (label: string) => {
+        setExpandedMenu(expandedMenu === label ? "" : label);
+    };
+
+    const isChildActive = (children: any[]) => {
+        return children.some(child => pathname === child.href || pathname.startsWith(child.href + "/"));
     };
 
     return (
@@ -112,19 +130,70 @@ export function Sidebar() {
             </div>
 
             {/* Navigation */}
-            <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+            <nav className="flex-1 px-4 py-4 space-y-1.5 overflow-y-auto overflow-x-hidden custom-scrollbar">
                 {navItems.map((item) => {
-                    const isActive = pathname === item.href;
+                    const hasChildren = !!item.children;
+                    const isActive = item.href ? pathname === item.href : (hasChildren && isChildActive(item.children || []));
+                    const isExpanded = expandedMenu === item.label || isActive;
                     const Icon = item.icon;
 
+                    if (hasChildren) {
+                        return (
+                            <div key={item.label} className="flex flex-col gap-1">
+                                <button
+                                    onClick={() => toggleMenu(item.label)}
+                                    className={cn(
+                                        "relative flex items-center justify-between px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors w-full",
+                                        isActive || isExpanded
+                                            ? "text-zinc-900 dark:text-zinc-50"
+                                            : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/50"
+                                    )}
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <Icon className={cn("w-5 h-5", isActive || isExpanded ? "text-orange-500" : "text-zinc-400")} />
+                                        <span>{item.label}</span>
+                                    </div>
+                                    {isExpanded ? <ChevronDown className="w-4 h-4 text-zinc-400" /> : <ChevronRight className="w-4 h-4 text-zinc-400" />}
+                                </button>
+
+                                {isExpanded && (
+                                    <div className="flex flex-col gap-1 ml-4 pl-4 border-l-2 border-zinc-100 dark:border-zinc-800">
+                                        {item.children?.map(child => {
+                                            const isChildCurrent = pathname === child.href || pathname.startsWith(child.href + "/") && child.href !== "/checklists";
+                                            // Handle special case for /checklists so it doesn't stay active on /checklists/dashboard
+                                            const isExactMatch = pathname === child.href;
+                                            const isChildTrulyActive = child.href === "/checklists" ? isExactMatch : isChildCurrent;
+
+                                            return (
+                                                <Link key={child.href} href={child.href}>
+                                                    <div
+                                                        className={cn(
+                                                            "relative flex items-center gap-3 px-4 py-2 rounded-lg text-sm font-medium transition-colors",
+                                                            isChildTrulyActive
+                                                                ? "text-zinc-900 dark:text-zinc-50 bg-zinc-100 dark:bg-zinc-900"
+                                                                : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/50"
+                                                        )}
+                                                    >
+                                                        <child.icon className="w-4 h-4" />
+                                                        <span>{child.label}</span>
+                                                    </div>
+                                                </Link>
+                                            )
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    }
+
                     return (
-                        <Link key={item.href} href={item.href} data-tour={`nav-${item.href.slice(1)}`}>
+                        <Link key={item.href} href={item.href!} data-tour={`nav-${item.href?.slice(1)}`}>
                             <div
                                 className={cn(
-                                    "relative flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors",
+                                    "relative flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors",
                                     isActive
                                         ? "text-zinc-900 dark:text-zinc-50"
-                                        : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+                                        : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/50"
                                 )}
                             >
                                 {isActive && (
@@ -134,7 +203,7 @@ export function Sidebar() {
                                         transition={{ type: "spring", stiffness: 350, damping: 30 }}
                                     />
                                 )}
-                                <Icon className="w-5 h-5 relative z-10" />
+                                <Icon className={cn("w-5 h-5 relative z-10", isActive && "text-orange-500")} />
                                 <span className="relative z-10">{item.label}</span>
                             </div>
                         </Link>

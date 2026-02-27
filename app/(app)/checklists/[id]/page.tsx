@@ -297,16 +297,16 @@ export default function ChecklistExecutionPage() {
                 action_type: 'checklist_completed',
                 description: `Completou o checklist ${template?.title} com score de ${Math.round(score)}%`
             });
-
             if (logError) {
                 console.warn("Aviso: erro ao criar log de atividade:", logError);
             }
 
-            alert("Checklist concluído com sucesso!");
-            router.push('/checklists');
+            // Redirect to success page with score info
+            const xpEarned = Math.round(score * 0.5); // XP based on score percentage
+            router.push(`/checklists/sucesso?score=${Math.round(score)}&earned=${earnedWeight}&total=${totalWeight}&xp=${xpEarned}&title=${encodeURIComponent(template?.title || 'Checklist')}`);
         } catch (err: any) {
-            console.error("Erro ao finalizar:", err);
-            alert(`Erro ao salvar o checklist: ${err.message || "Erro desconhecido. Tente novamente."}`);
+            console.error("Erro ao finalizar:", err.message || err);
+            alert(`Erro ao salvar o checklist: ${err.message || 'Erro desconhecido'}`);
         } finally {
             setIsSaving(false);
         }
