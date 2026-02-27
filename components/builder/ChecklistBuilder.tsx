@@ -6,7 +6,8 @@ import {
     Plus, GripVertical, Trash2, Copy, Settings2,
     ChevronDown, ChevronUp, Save, Eye, History,
     Zap, Image as ImageIcon, Weight, Layers,
-    FileText, Sparkles, MoreVertical, Check, Loader2
+    FileText, Sparkles, MoreVertical, Check, Loader2,
+    Calendar, Clock, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -46,41 +47,14 @@ function createDefaultSection(order: number): ChecklistSection {
     };
 }
 
-// Mock initial data
-const initialSections: ChecklistSection[] = [
-    {
-        id: "sec1", title: "Limpeza e Higienização", color: "#10b981", icon: "🧹", order: 0,
-        description: "Verificação de limpeza em todas as áreas",
-        questions: [
-            { id: "q1", text: "Área de preparo higienizada?", type: "yes_no", required: true, weight: 3, mediaInstructions: [{ id: "m1", type: "image", url: "/placeholder.jpg", caption: "Exemplo de bancada limpa e organizada" }], conditionalRules: [{ id: "cr1", triggerAnswer: "no", action: "require_photo", targetQuestionIds: ["q1b"] }], order: 0 },
-            { id: "q1b", text: "Foto da área suja (evidência)", type: "photo", required: false, weight: 1, mediaInstructions: [], conditionalRules: [], conditionalParentId: "q1", order: 1 },
-            { id: "q2", text: "Ralos limpos e sem odor?", type: "yes_no", required: true, weight: 2, mediaInstructions: [], conditionalRules: [], order: 2 },
-            { id: "q3", text: "Lixeiras tampadas e forradas?", type: "yes_no", required: true, weight: 2, mediaInstructions: [], conditionalRules: [], order: 3 },
-        ],
-    },
-    {
-        id: "sec2", title: "Controle de Temperatura", color: "#3b82f6", icon: "🌡️", order: 1,
-        description: "APPCC — Registro de temperaturas críticas",
-        questions: [
-            { id: "q4", text: "Temperatura da câmara fria (°C)", type: "number", required: true, weight: 5, placeholder: "Ex: 3.5", helpText: "Deve estar ≤ 5°C", mediaInstructions: [{ id: "m2", type: "video", url: "#", caption: "Como usar termômetro infravermelho" }], conditionalRules: [], order: 0 },
-            { id: "q5", text: "Temperatura do congelador (°C)", type: "number", required: true, weight: 5, placeholder: "Ex: -18", helpText: "Deve estar ≤ -18°C", mediaInstructions: [], conditionalRules: [], order: 1 },
-            { id: "q6", text: "Equipamentos calibrados?", type: "yes_no", required: true, weight: 4, mediaInstructions: [], conditionalRules: [{ id: "cr2", triggerAnswer: "no", action: "create_action_plan", targetQuestionIds: [] }], order: 2 },
-        ],
-    },
-    {
-        id: "sec3", title: "Estoque e FIFO", color: "#f59e0b", icon: "📦", order: 2,
-        questions: [
-            { id: "q7", text: "FIFO aplicado no estoque?", type: "yes_no", required: true, weight: 3, mediaInstructions: [], conditionalRules: [], order: 0 },
-            { id: "q8", text: "Produtos com rótulo visível?", type: "yes_no", required: true, weight: 2, mediaInstructions: [], conditionalRules: [], order: 1 },
-            { id: "q9", text: "Estoque mínimo mantido?", type: "options", required: true, weight: 2, options: ["Completo", "Parcial", "Abaixo do mínimo"], mediaInstructions: [], conditionalRules: [], order: 2 },
-            { id: "q10", text: "Avaliação geral do estoque", type: "rating", required: false, weight: 1, mediaInstructions: [], conditionalRules: [], order: 3 },
-        ],
-    },
+// Empty state for new checklists
+const emptySections: ChecklistSection[] = [
+    createDefaultSection(0),
 ];
 
 export function ChecklistBuilder({ templateId, onSave }: { templateId?: string | null, onSave?: () => void }) {
-    const [sections, setSections] = useState<ChecklistSection[]>(initialSections);
-    const [templateName, setTemplateName] = useState("Checklist de Abertura — Cozinha");
+    const [sections, setSections] = useState<ChecklistSection[]>([]);
+    const [templateName, setTemplateName] = useState("");
     const [selectedQuestion, setSelectedQuestion] = useState<string | null>(null);
     const [showPreview, setShowPreview] = useState(false);
     const [showVersions, setShowVersions] = useState(false);
@@ -92,8 +66,12 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
     const [isLoadingTemplate, setIsLoadingTemplate] = useState(false);
     const [sectors, setSectors] = useState<{ id: string, name: string }[]>([]);
     const [sectorId, setSectorId] = useState<string>("");
+    const [deadlineDate, setDeadlineDate] = useState<string>("");
+    const [deadlineTime, setDeadlineTime] = useState<string>("");
+    const [currentTemplateDbId, setCurrentTemplateDbId] = useState<string | null>(templateId || null);
     const supabase = createClient();
 
+    // Fetch sectors
     useEffect(() => {
         async function fetchSectors() {
             const { data } = await supabase.from('sectors').select('id, name').order('name');
@@ -102,13 +80,22 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
         fetchSectors();
     }, [supabase]);
 
+    // Load template if editing, otherwise start blank
     useEffect(() => {
-        if (!templateId) return;
+        if (!templateId) {
+            // New checklist: start completely clean
+            setSections([createDefaultSection(0)]);
+            setTemplateName("");
+            setSectorId("");
+            setDeadlineDate("");
+            setDeadlineTime("");
+            setCurrentTemplateDbId(null);
+            return;
+        }
 
         async function loadTemplate() {
             setIsLoadingTemplate(true);
             try {
-                // Fetch template
                 const { data: tData, error: tError } = await supabase
                     .from("checklist_templates")
                     .select("*")
@@ -119,9 +106,11 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
                 if (tData) {
                     setTemplateName(tData.title);
                     setSectorId(tData.sector_id || "");
+                    setDeadlineDate(tData.deadline_date || "");
+                    setDeadlineTime(tData.deadline_time || "");
+                    setCurrentTemplateDbId(tData.id);
                 }
 
-                // Fetch questions
                 const { data: qData, error: qError } = await supabase
                     .from("template_questions")
                     .select("*")
@@ -131,7 +120,6 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
                 if (qError) throw qError;
 
                 if (qData && qData.length > 0) {
-                    // Group questions back into sections
                     const sectionMap = new Map<string, ChecklistSection>();
 
                     for (const q of qData) {
@@ -166,7 +154,9 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
                     }
 
                     const loadedSections = Array.from(sectionMap.values()).sort((a, b) => a.order - b.order);
-                    setSections(loadedSections);
+                    setSections(loadedSections.length > 0 ? loadedSections : [createDefaultSection(0)]);
+                } else {
+                    setSections([createDefaultSection(0)]);
                 }
 
             } catch (err) {
@@ -246,49 +236,76 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
     };
 
     const handleSave = async () => {
+        if (!templateName.trim()) {
+            alert("Por favor, dê um nome ao checklist.");
+            return;
+        }
+
+        // Check there's at least 1 question with text
+        const hasQuestion = sections.some(s => s.questions.some(q => q.text.trim()));
+        if (!hasQuestion) {
+            alert("Adicione pelo menos uma pergunta com texto.");
+            return;
+        }
+
         setIsSaving(true);
         try {
-            let currentTemplateId = templateId;
+            let savedTemplateId = currentTemplateDbId;
+            const previousQuestionCount = templateId ? await getPreviousQuestionCount(templateId) : 0;
 
-            if (currentTemplateId) {
-                // Update
+            if (savedTemplateId) {
+                // Update existing template
                 const { error: templateError } = await supabase
                     .from("checklist_templates")
                     .update({
                         title: templateName,
                         description: "Template editado via construtor",
-                        sector_id: sectorId || null
+                        sector_id: sectorId || null,
+                        deadline_date: deadlineDate || null,
+                        deadline_time: deadlineTime || null,
                     })
-                    .eq("id", currentTemplateId);
+                    .eq("id", savedTemplateId);
 
-                if (templateError) throw templateError;
+                if (templateError) {
+                    console.error("Erro ao atualizar template:", templateError);
+                    throw new Error(`Erro ao atualizar: ${templateError.message}`);
+                }
 
-                // Delete old questions
+                // Delete old questions 
                 const { error: delError } = await supabase
                     .from("template_questions")
                     .delete()
-                    .eq("template_id", currentTemplateId);
+                    .eq("template_id", savedTemplateId);
 
-                if (delError) throw delError;
+                if (delError) {
+                    console.error("Erro ao limpar perguntas:", delError);
+                    throw new Error(`Erro ao limpar perguntas: ${delError.message}`);
+                }
             } else {
-                // Insert
+                // Insert new template
                 const { data: templateData, error: templateError } = await supabase
                     .from("checklist_templates")
                     .insert({
                         title: templateName,
                         description: "Template gerado via construtor",
                         sector_id: sectorId || null,
+                        deadline_date: deadlineDate || null,
+                        deadline_time: deadlineTime || null,
                         version: 1,
                         is_active: true
                     })
                     .select()
                     .single();
 
-                if (templateError) throw templateError;
-                currentTemplateId = templateData.id;
+                if (templateError) {
+                    console.error("Erro ao criar template:", templateError);
+                    throw new Error(`Erro ao criar: ${templateError.message}`);
+                }
+                savedTemplateId = templateData.id;
+                setCurrentTemplateDbId(savedTemplateId);
             }
 
-            // Insere perguntas relacionando com as seções em JSON e o ID real do template gerado
+            // Insert questions
             const questionsToInsert = [];
             let globalIndex = 0;
 
@@ -303,8 +320,9 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
                 });
 
                 for (const q of section.questions) {
+                    if (!q.text.trim()) continue; // Skip empty questions
                     questionsToInsert.push({
-                        template_id: currentTemplateId,
+                        template_id: savedTemplateId,
                         section: sectionData,
                         order_index: globalIndex++,
                         title: q.text,
@@ -319,20 +337,44 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
 
             if (questionsToInsert.length > 0) {
                 const { error: qsError } = await supabase.from("template_questions").insert(questionsToInsert);
-                if (qsError) throw qsError;
+                if (qsError) {
+                    console.error("Erro ao inserir perguntas:", qsError);
+                    throw new Error(`Erro ao inserir perguntas: ${qsError.message}`);
+                }
             }
+
+            // Save version snapshot
+            const newQCount = questionsToInsert.length;
+            const diff = newQCount - previousQuestionCount;
+            await supabase.from("template_versions").insert({
+                template_id: savedTemplateId,
+                version: templateId ? 2 : 1,
+                snapshot: { templateName, sections, sectorId, deadlineDate, deadlineTime },
+                changes: [templateId ? "Template atualizado via construtor" : "Template criado via construtor"],
+                questions_added: diff > 0 ? diff : 0,
+                questions_removed: diff < 0 ? Math.abs(diff) : 0,
+                questions_modified: templateId ? Math.min(newQCount, previousQuestionCount) : 0,
+            });
 
             setSaved(true);
             setTimeout(() => {
                 setSaved(false);
                 if (onSave) onSave();
             }, 1000);
-        } catch (error) {
+        } catch (error: any) {
             console.error("Erro ao salvar:", error);
-            alert("Erro ao salvar o checklist. Tente novamente.");
+            alert(`Erro ao salvar o checklist: ${error.message || "Erro desconhecido"}`);
         } finally {
             setIsSaving(false);
         }
+    };
+
+    const getPreviousQuestionCount = async (tplId: string): Promise<number> => {
+        const { count } = await supabase
+            .from("template_questions")
+            .select("*", { count: "exact", head: true })
+            .eq("template_id", tplId);
+        return count || 0;
     };
 
     const handleReorderQuestions = (sectionId: string, newOrder: ChecklistQuestion[]) => {
@@ -342,10 +384,25 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
         }));
     };
 
+    const handleLoadTemplate = (loadedSections: ChecklistSection[], name: string) => {
+        setSections(loadedSections);
+        setTemplateName(name);
+        setShowTemplates(false);
+    };
+
+    const handleRestoreVersion = (snapshot: any) => {
+        if (snapshot.sections) setSections(snapshot.sections);
+        if (snapshot.templateName) setTemplateName(snapshot.templateName);
+        if (snapshot.sectorId) setSectorId(snapshot.sectorId);
+        if (snapshot.deadlineDate) setDeadlineDate(snapshot.deadlineDate);
+        if (snapshot.deadlineTime) setDeadlineTime(snapshot.deadlineTime);
+        setShowVersions(false);
+    };
+
     return (
-        <div className="flex gap-6 h-[calc(100vh-2rem)]">
+        <div className="flex flex-col lg:flex-row gap-6 min-h-[calc(100vh-8rem)]">
             {/* Main Builder Area */}
-            <div className="flex-1 overflow-y-auto space-y-4 pr-2">
+            <div className="flex-1 overflow-y-auto space-y-4 pr-0 lg:pr-2">
                 {isLoadingTemplate ? (
                     <div className="flex flex-col items-center justify-center h-full p-12 text-zinc-500">
                         <Loader2 className="w-8 h-8 animate-spin mb-4 text-orange-500" />
@@ -355,9 +412,9 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
                     <>
                         {/* Header */}
                         <div className="bg-white dark:bg-zinc-950 rounded-2xl border border-zinc-100 dark:border-zinc-900 p-5 sticky top-0 z-10">
-                            <div className="flex items-center justify-between">
+                            <div className="flex flex-col lg:flex-row lg:items-center gap-4">
                                 <div className="flex items-center gap-3 flex-1">
-                                    <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-red-500 rounded-xl flex items-center justify-center shadow-lg">
+                                    <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-red-500 rounded-xl flex items-center justify-center shadow-lg shrink-0">
                                         <Layers className="w-5 h-5 text-white" />
                                     </div>
                                     <div className="flex-1">
@@ -384,11 +441,36 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
                                             <span>📋 {totalQuestions} perguntas</span>
                                             <span>📂 {sections.length} seções</span>
                                             <span>⚖️ Peso total: {totalWeight}</span>
-                                            <span>v3.2</span>
                                         </div>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-2">
+
+                                {/* Schedule/Deadline */}
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <div className="flex items-center gap-1.5 bg-zinc-50 dark:bg-zinc-900 rounded-xl px-3 py-2 border border-zinc-100 dark:border-zinc-800">
+                                        <Calendar className="w-3.5 h-3.5 text-zinc-400" />
+                                        <input
+                                            type="date"
+                                            value={deadlineDate}
+                                            onChange={(e) => setDeadlineDate(e.target.value)}
+                                            className="text-xs bg-transparent border-none focus:outline-none text-zinc-600 dark:text-zinc-300"
+                                            title="Data limite"
+                                        />
+                                    </div>
+                                    <div className="flex items-center gap-1.5 bg-zinc-50 dark:bg-zinc-900 rounded-xl px-3 py-2 border border-zinc-100 dark:border-zinc-800">
+                                        <Clock className="w-3.5 h-3.5 text-zinc-400" />
+                                        <input
+                                            type="time"
+                                            value={deadlineTime}
+                                            onChange={(e) => setDeadlineTime(e.target.value)}
+                                            className="text-xs bg-transparent border-none focus:outline-none text-zinc-600 dark:text-zinc-300"
+                                            title="Horário limite"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Action Buttons */}
+                                <div className="flex items-center gap-2 flex-wrap">
                                     <button onClick={() => setShowTemplates(true)} className="px-3 py-2 bg-zinc-100 dark:bg-zinc-800 rounded-xl text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all flex items-center gap-1.5">
                                         <Copy className="w-3.5 h-3.5" /> Templates
                                     </button>
@@ -406,11 +488,86 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
                                             saved ? "bg-emerald-500 text-white" : "bg-gradient-to-r from-orange-500 to-red-500 text-white hover:from-orange-600 hover:to-red-600 shadow-md disabled:opacity-50"
                                         )}
                                     >
-                                        {isSaving ? "Salvando..." : saved ? <><Check className="w-3.5 h-3.5" /> Salvo!</> : <><Save className="w-3.5 h-3.5" /> Salvar</>}
+                                        {isSaving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Salvando...</> : saved ? <><Check className="w-3.5 h-3.5" /> Salvo!</> : <><Save className="w-3.5 h-3.5" /> Salvar</>}
                                     </motion.button>
                                 </div>
                             </div>
                         </div>
+
+                        {/* Preview Mode */}
+                        <AnimatePresence>
+                            {showPreview && (
+                                <motion.div
+                                    initial={{ opacity: 0, height: 0 }}
+                                    animate={{ opacity: 1, height: "auto" }}
+                                    exit={{ opacity: 0, height: 0 }}
+                                    className="overflow-hidden"
+                                >
+                                    <div className="bg-white dark:bg-zinc-950 rounded-2xl border-2 border-violet-200 dark:border-violet-800 p-6 space-y-6">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <Eye className="w-5 h-5 text-violet-500" />
+                                                <h3 className="font-bold text-lg text-zinc-900 dark:text-zinc-50">Preview do Checklist</h3>
+                                            </div>
+                                            <button onClick={() => setShowPreview(false)} className="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-400">
+                                                <X className="w-4 h-4" />
+                                            </button>
+                                        </div>
+
+                                        <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 bg-zinc-50 dark:bg-zinc-900/50">
+                                            <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-50 mb-1">
+                                                {templateName || "Sem título"}
+                                            </h2>
+                                            <p className="text-sm text-zinc-500 mb-1">
+                                                {totalQuestions} perguntas • {sections.length} seções
+                                            </p>
+                                            {(deadlineDate || deadlineTime) && (
+                                                <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                                                    <Calendar className="w-3 h-3" />
+                                                    Prazo: {deadlineDate && new Date(deadlineDate + "T00:00").toLocaleDateString("pt-BR")}
+                                                    {deadlineTime && ` às ${deadlineTime}`}
+                                                </p>
+                                            )}
+                                        </div>
+
+                                        {sections.map((section, si) => (
+                                            <div key={section.id} className="space-y-3">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xl">{section.icon}</span>
+                                                    <h4 className="font-bold text-sm text-zinc-900 dark:text-zinc-50" style={{ color: section.color }}>
+                                                        {section.title || `Seção ${si + 1}`}
+                                                    </h4>
+                                                </div>
+                                                {section.questions.map((q, qi) => (
+                                                    <div key={q.id} className={cn(
+                                                        "flex items-start gap-3 p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-100 dark:border-zinc-800",
+                                                        q.conditionalParentId && "ml-6 border-dashed"
+                                                    )}>
+                                                        <span className="text-xs font-bold text-zinc-400 mt-1 w-5 shrink-0">{qi + 1}</span>
+                                                        <div className="flex-1">
+                                                            <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+                                                                {q.text || "Pergunta sem texto"}
+                                                                {q.required && <span className="text-red-400 ml-1">*</span>}
+                                                            </p>
+                                                            <div className="flex items-center gap-2 mt-1.5">
+                                                                <span className="text-[10px] px-2 py-0.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-500 rounded-full">
+                                                                    {QUESTION_TYPE_CONFIG[q.type]?.icon} {QUESTION_TYPE_CONFIG[q.type]?.label}
+                                                                </span>
+                                                                {q.weight > 1 && (
+                                                                    <span className="text-[10px] px-2 py-0.5 bg-amber-100 dark:bg-amber-950 text-amber-600 rounded-full">
+                                                                        Peso {q.weight}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
 
                         {/* Sections */}
                         {sections.map((section, si) => {
@@ -535,38 +692,32 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
                                                                                 onClick={(e: React.MouseEvent) => e.stopPropagation()}
                                                                             />
                                                                             <div className="flex items-center gap-2 mt-1 flex-wrap">
-                                                                                {/* Type Badge */}
                                                                                 <span className="text-[10px] px-2 py-0.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-500 rounded-full flex items-center gap-1">
                                                                                     {QUESTION_TYPE_CONFIG[question.type].icon} {QUESTION_TYPE_CONFIG[question.type].label}
                                                                                 </span>
 
-                                                                                {/* Weight */}
                                                                                 {question.weight > 1 && (
                                                                                     <span className="text-[10px] px-2 py-0.5 bg-amber-100 dark:bg-amber-950 text-amber-600 rounded-full flex items-center gap-1">
                                                                                         <Weight className="w-3 h-3" /> Peso {question.weight}
                                                                                     </span>
                                                                                 )}
 
-                                                                                {/* Conditional */}
                                                                                 {question.conditionalRules.length > 0 && (
                                                                                     <span className="text-[10px] px-2 py-0.5 bg-violet-100 dark:bg-violet-950 text-violet-600 rounded-full flex items-center gap-1">
                                                                                         <Zap className="w-3 h-3" /> Condicional
                                                                                     </span>
                                                                                 )}
 
-                                                                                {/* Media */}
                                                                                 {question.mediaInstructions.length > 0 && (
                                                                                     <span className="text-[10px] px-2 py-0.5 bg-blue-100 dark:bg-blue-950 text-blue-600 rounded-full flex items-center gap-1">
                                                                                         <ImageIcon className="w-3 h-3" /> {question.mediaInstructions.length} mídia
                                                                                     </span>
                                                                                 )}
 
-                                                                                {/* Required */}
                                                                                 {question.required && (
                                                                                     <span className="text-[10px] text-red-400">*obrigatória</span>
                                                                                 )}
 
-                                                                                {/* Conditional parent indicator */}
                                                                                 {question.conditionalParentId && (
                                                                                     <span className="text-[10px] px-2 py-0.5 bg-violet-50 dark:bg-violet-950/50 text-violet-500 rounded-full">
                                                                                         ↳ Aparece se condição
@@ -623,7 +774,7 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
                         initial={{ opacity: 0, x: 20, width: 0 }}
                         animate={{ opacity: 1, x: 0, width: 380 }}
                         exit={{ opacity: 0, x: 20, width: 0 }}
-                        className="shrink-0 overflow-y-auto"
+                        className="shrink-0 overflow-y-auto hidden lg:block"
                     >
                         <QuestionEditor
                             sections={sections}
@@ -637,8 +788,19 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
 
             {/* Modals */}
             <AnimatePresence>
-                {showVersions && <VersionHistory onClose={() => setShowVersions(false)} />}
-                {showTemplates && <TemplateManager onClose={() => setShowTemplates(false)} />}
+                {showVersions && (
+                    <VersionHistory
+                        templateId={currentTemplateDbId}
+                        onClose={() => setShowVersions(false)}
+                        onRestore={handleRestoreVersion}
+                    />
+                )}
+                {showTemplates && (
+                    <TemplateManager
+                        onClose={() => setShowTemplates(false)}
+                        onLoad={handleLoadTemplate}
+                    />
+                )}
             </AnimatePresence>
         </div>
     );

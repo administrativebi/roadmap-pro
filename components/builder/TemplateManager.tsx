@@ -1,64 +1,135 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
-    X, Copy, Plus, Search, Star, Building2,
-    Clock, FileText, Layers, Check,
+    X, Copy, Search, Star, Clock,
+    FileText, Layers, Check, Loader2, Download,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-interface Template {
-    id: string;
-    name: string;
-    description: string;
-    category: string;
-    sectionsCount: number;
-    questionsCount: number;
-    estimatedTime: number;
-    difficulty: "easy" | "medium" | "hard";
-    usedBy: string[];
-    rating: number;
-    version: string;
-    lastUpdated: string;
-    icon: string;
-}
-
-const templates: Template[] = [
-    { id: "t1", name: "Checklist de Abertura — Cozinha", description: "Verificação completa para início do turno na cozinha", category: "Operacional", sectionsCount: 4, questionsCount: 22, estimatedTime: 15, difficulty: "medium", usedBy: ["Matriz", "Filial 1"], rating: 4.8, version: "v3.2", lastUpdated: "Hoje, 10:30", icon: "🍳" },
-    { id: "t2", name: "Checklist de Fechamento — Cozinha", description: "Procedimentos de encerramento do turno", category: "Operacional", sectionsCount: 3, questionsCount: 18, estimatedTime: 12, difficulty: "medium", usedBy: ["Matriz"], rating: 4.5, version: "v2.1", lastUpdated: "Ontem", icon: "🌙" },
-    { id: "t3", name: "Checklist APPCC Diário", description: "Análise de perigos e pontos críticos de controle", category: "Segurança", sectionsCount: 5, questionsCount: 30, estimatedTime: 25, difficulty: "hard", usedBy: ["Matriz", "Filial 1", "Filial 2"], rating: 4.9, version: "v5.0", lastUpdated: "3 dias atrás", icon: "🛡️" },
-    { id: "t4", name: "Inspeção do Salão", description: "Conferência de mesas, decoração e limpeza", category: "Operacional", sectionsCount: 2, questionsCount: 12, estimatedTime: 8, difficulty: "easy", usedBy: ["Matriz"], rating: 4.3, version: "v1.4", lastUpdated: "1 semana", icon: "🍽️" },
-    { id: "t5", name: "Recebimento de Mercadoria", description: "Verificação na entrada de produtos e insumos", category: "Estoque", sectionsCount: 3, questionsCount: 15, estimatedTime: 20, difficulty: "medium", usedBy: ["Matriz", "Filial 1"], rating: 4.6, version: "v2.3", lastUpdated: "5 dias atrás", icon: "📦" },
-    { id: "t6", name: "Auditoria Mensal ANVISA", description: "Checklist completo para preparação de auditoria", category: "Compliance", sectionsCount: 8, questionsCount: 60, estimatedTime: 45, difficulty: "hard", usedBy: ["Todas"], rating: 5.0, version: "v4.1", lastUpdated: "2 semanas", icon: "📋" },
-];
-
-const diffLabel = {
-    easy: { label: "Fácil", color: "bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400" },
-    medium: { label: "Médio", color: "bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400" },
-    hard: { label: "Avançado", color: "bg-red-100 text-red-600 dark:bg-red-950 dark:text-red-400" },
-};
+import { createClient } from "@/lib/supabase/client";
+import {
+    ChecklistSection, ChecklistQuestion,
+    SECTION_COLORS, SECTION_ICONS,
+} from "@/types/checklist-builder";
 
 interface TemplateManagerProps {
     onClose: () => void;
+    onLoad?: (sections: ChecklistSection[], name: string) => void;
 }
 
-export function TemplateManager({ onClose }: TemplateManagerProps) {
-    const [search, setSearch] = useState("");
-    const [category, setCategory] = useState("all");
-    const [duplicated, setDuplicated] = useState<string | null>(null);
+function generateId() {
+    return `id_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+}
 
-    const categories = ["all", ...Array.from(new Set(templates.map((t) => t.category)))];
+export function TemplateManager({ onClose, onLoad }: TemplateManagerProps) {
+    const [search, setSearch] = useState("");
+    const [templates, setTemplates] = useState<any[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [loadingId, setLoadingId] = useState<string | null>(null);
+    const [duplicatedId, setDuplicatedId] = useState<string | null>(null);
+    const supabase = createClient();
+
+    useEffect(() => {
+        async function fetchTemplates() {
+            setIsLoading(true);
+            const { data, error } = await supabase
+                .from("checklist_templates")
+                .select(`
+                    id,
+                    title,
+                    description,
+                    icon,
+                    version,
+                    created_at,
+                    sectors(name),
+                    template_questions(id)
+                `)
+                .eq("is_active", true)
+                .order("created_at", { ascending: false });
+
+            if (data) {
+                setTemplates(data.map((t: any) => ({
+                    id: t.id,
+                    name: t.title,
+                    description: t.description || "",
+                    icon: t.icon || "📋",
+                    sector: t.sectors?.name || "Geral",
+                    questionsCount: t.template_questions?.length || 0,
+                    version: `v${t.version || 1}`,
+                    lastUpdated: new Date(t.created_at).toLocaleDateString("pt-BR"),
+                })));
+            }
+            setIsLoading(false);
+        }
+        fetchTemplates();
+    }, [supabase]);
 
     const filtered = templates.filter((t) => {
-        const matchSearch = t.name.toLowerCase().includes(search.toLowerCase()) || t.description.toLowerCase().includes(search.toLowerCase());
-        const matchCat = category === "all" || t.category === category;
-        return matchSearch && matchCat;
+        return t.name.toLowerCase().includes(search.toLowerCase()) ||
+            t.description.toLowerCase().includes(search.toLowerCase()) ||
+            t.sector.toLowerCase().includes(search.toLowerCase());
     });
 
-    const handleDuplicate = (id: string) => {
-        setDuplicated(id);
-        setTimeout(() => setDuplicated(null), 2000);
+    const handleLoadTemplate = async (templateId: string) => {
+        if (!onLoad) return;
+        setLoadingId(templateId);
+
+        try {
+            const { data: tData } = await supabase
+                .from("checklist_templates")
+                .select("*")
+                .eq("id", templateId)
+                .single();
+
+            const { data: qData } = await supabase
+                .from("template_questions")
+                .select("*")
+                .eq("template_id", templateId)
+                .order("order_index", { ascending: true });
+
+            if (qData && qData.length > 0) {
+                const sectionMap = new Map<string, ChecklistSection>();
+
+                for (const q of qData) {
+                    try {
+                        const sectionMeta = JSON.parse(q.section);
+                        if (!sectionMap.has(sectionMeta.id)) {
+                            sectionMap.set(sectionMeta.id, {
+                                id: sectionMeta.id,
+                                title: sectionMeta.title,
+                                description: sectionMeta.description || "",
+                                color: sectionMeta.color || SECTION_COLORS[0],
+                                icon: sectionMeta.icon || SECTION_ICONS[0],
+                                order: sectionMeta.order || 0,
+                                questions: []
+                            });
+                        }
+
+                        const sec = sectionMap.get(sectionMeta.id)!;
+                        sec.questions.push({
+                            id: generateId(),
+                            text: q.title,
+                            type: q.type as any,
+                            required: q.is_required,
+                            weight: q.weight,
+                            mediaInstructions: [],
+                            conditionalRules: q.conditional_rules || [],
+                            order: q.order_index,
+                        });
+                    } catch { }
+                }
+
+                const loadedSections = Array.from(sectionMap.values()).sort((a, b) => a.order - b.order);
+                onLoad(loadedSections, `${tData?.title || "Checklist"} (Cópia)`);
+            }
+        } catch (err) {
+            console.error("Erro ao carregar template:", err);
+        } finally {
+            setDuplicatedId(templateId);
+            setLoadingId(null);
+            setTimeout(() => setDuplicatedId(null), 2000);
+        }
     };
 
     return (
@@ -66,7 +137,7 @@ export function TemplateManager({ onClose }: TemplateManagerProps) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-6"
+            className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 lg:p-6"
             onClick={onClose}
         >
             <motion.div
@@ -80,18 +151,18 @@ export function TemplateManager({ onClose }: TemplateManagerProps) {
                 <div className="p-5 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between shrink-0">
                     <div>
                         <h2 className="font-bold text-lg text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
-                            <Layers className="w-5 h-5 text-orange-500" /> Templates de Checklists
+                            <Layers className="w-5 h-5 text-orange-500" /> Templates Disponíveis
                         </h2>
-                        <p className="text-xs text-zinc-400 mt-0.5">Duplique e customize para qualquer unidade</p>
+                        <p className="text-xs text-zinc-400 mt-0.5">Carregue um template existente como base para o seu checklist</p>
                     </div>
                     <button onClick={onClose} className="p-2 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400">
                         <X className="w-5 h-5" />
                     </button>
                 </div>
 
-                {/* Search & Filters */}
+                {/* Search */}
                 <div className="p-4 border-b border-zinc-100 dark:border-zinc-800 shrink-0">
-                    <div className="relative mb-3">
+                    <div className="relative">
                         <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
                         <input
                             type="text"
@@ -101,27 +172,21 @@ export function TemplateManager({ onClose }: TemplateManagerProps) {
                             className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
                         />
                     </div>
-                    <div className="flex gap-2">
-                        {categories.map((cat) => (
-                            <button
-                                key={cat}
-                                onClick={() => setCategory(cat)}
-                                className={cn(
-                                    "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all capitalize",
-                                    category === cat ? "bg-orange-500 text-white" : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
-                                )}
-                            >
-                                {cat === "all" ? "Todos" : cat}
-                            </button>
-                        ))}
-                    </div>
                 </div>
 
                 {/* Template List */}
                 <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                    {filtered.map((template) => {
-                        const diff = diffLabel[template.difficulty];
-                        return (
+                    {isLoading ? (
+                        <div className="flex flex-col items-center justify-center p-12 text-zinc-500">
+                            <Loader2 className="w-6 h-6 animate-spin mb-2 text-orange-500" />
+                            <p className="text-sm">Carregando templates...</p>
+                        </div>
+                    ) : filtered.length === 0 ? (
+                        <div className="text-center p-12 text-zinc-500 text-sm">
+                            Nenhum template encontrado.
+                        </div>
+                    ) : (
+                        filtered.map((template) => (
                             <div
                                 key={template.id}
                                 className="bg-zinc-50 dark:bg-zinc-800 rounded-xl p-4 border border-zinc-100 dark:border-zinc-700 hover:border-orange-200 dark:hover:border-orange-800 transition-all"
@@ -137,29 +202,39 @@ export function TemplateManager({ onClose }: TemplateManagerProps) {
                                         </div>
                                         <p className="text-xs text-zinc-500 mb-2">{template.description}</p>
                                         <div className="flex items-center gap-3 flex-wrap">
-                                            <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-bold", diff.color)}>{diff.label}</span>
-                                            <span className="text-[10px] text-zinc-400"><FileText className="w-3 h-3 inline" /> {template.questionsCount} perguntas</span>
-                                            <span className="text-[10px] text-zinc-400"><Layers className="w-3 h-3 inline" /> {template.sectionsCount} seções</span>
-                                            <span className="text-[10px] text-zinc-400"><Clock className="w-3 h-3 inline" /> ~{template.estimatedTime}min</span>
-                                            <span className="text-[10px] text-zinc-400"><Building2 className="w-3 h-3 inline" /> {template.usedBy.join(", ")}</span>
-                                            <span className="text-[10px] text-amber-500 font-bold flex items-center gap-0.5"><Star className="w-3 h-3 fill-amber-400" /> {template.rating}</span>
+                                            <span className="text-[10px] px-2 py-0.5 bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 rounded-full font-bold">
+                                                {template.sector}
+                                            </span>
+                                            <span className="text-[10px] text-zinc-400">
+                                                <FileText className="w-3 h-3 inline" /> {template.questionsCount} perguntas
+                                            </span>
+                                            <span className="text-[10px] text-zinc-400">
+                                                <Clock className="w-3 h-3 inline" /> {template.lastUpdated}
+                                            </span>
                                         </div>
                                     </div>
                                     <button
-                                        onClick={() => handleDuplicate(template.id)}
+                                        onClick={() => handleLoadTemplate(template.id)}
+                                        disabled={loadingId === template.id}
                                         className={cn(
                                             "px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0",
-                                            duplicated === template.id
+                                            duplicatedId === template.id
                                                 ? "bg-emerald-500 text-white"
                                                 : "bg-orange-100 dark:bg-orange-950 text-orange-600 dark:text-orange-400 hover:bg-orange-200 dark:hover:bg-orange-900"
                                         )}
                                     >
-                                        {duplicated === template.id ? <><Check className="w-3.5 h-3.5" /> Duplicado!</> : <><Copy className="w-3.5 h-3.5" /> Duplicar</>}
+                                        {loadingId === template.id ? (
+                                            <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Carregando...</>
+                                        ) : duplicatedId === template.id ? (
+                                            <><Check className="w-3.5 h-3.5" /> Carregado!</>
+                                        ) : (
+                                            <><Download className="w-3.5 h-3.5" /> Usar Template</>
+                                        )}
                                     </button>
                                 </div>
                             </div>
-                        );
-                    })}
+                        ))
+                    )}
                 </div>
             </motion.div>
         </motion.div>
