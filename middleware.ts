@@ -3,9 +3,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 export async function middleware(request: NextRequest) {
-    // TODO: Descomentar quando o Supabase estiver configurado
-    // return await updateSession(request);
-    return NextResponse.next();
+    return await updateSession(request);
 }
 
 export const config = {

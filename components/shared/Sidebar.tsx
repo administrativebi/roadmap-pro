@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 const navItems = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -58,6 +59,22 @@ export function Sidebar() {
     const pathname = usePathname();
     const router = useRouter();
     const supabase = createClient();
+    const [profile, setProfile] = useState<any>(null);
+
+    useEffect(() => {
+        async function loadProfile() {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                const { data } = await supabase
+                    .from("profiles")
+                    .select("name, level, total_xp, streak_days")
+                    .eq("id", user.id)
+                    .single();
+                setProfile(data);
+            }
+        }
+        loadProfile();
+    }, [supabase]);
 
     const handleLogout = async () => {
         await supabase.auth.signOut();
@@ -74,20 +91,24 @@ export function Sidebar() {
                         <span className="text-lg font-black text-white dark:text-zinc-900">✓</span>
                     </div>
                     <div>
-                        <h2 className="font-bold text-zinc-900 dark:text-zinc-50 text-sm">Checklist Pro</h2>
+                        <h2 className="font-bold text-zinc-900 dark:text-zinc-50 text-sm">
+                            {profile ? profile.name : "Checklist Pro"}
+                        </h2>
                         <p className="text-xs text-zinc-400">Gamificado</p>
                     </div>
                 </div>
                 {/* Mini Streak */}
-                <div data-tour="streak" className="mt-4 bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-950/50 dark:to-amber-950/50 rounded-xl p-3 flex items-center gap-2">
-                    <div className="w-8 h-8 bg-gradient-to-br from-orange-400 to-red-500 rounded-lg flex items-center justify-center">
-                        <Flame className="w-4 h-4 text-white" />
+                {profile && profile.streak_days > 0 && (
+                    <div data-tour="streak" className="mt-4 bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-950/50 dark:to-amber-950/50 rounded-xl p-3 flex items-center gap-2">
+                        <div className="w-8 h-8 bg-gradient-to-br from-orange-400 to-red-500 rounded-lg flex items-center justify-center">
+                            <Flame className="w-4 h-4 text-white" />
+                        </div>
+                        <div>
+                            <p className="text-xs font-bold text-orange-700 dark:text-orange-300">{profile.streak_days} dias seguidos!</p>
+                            <p className="text-[10px] text-orange-500 dark:text-orange-400">Sequência de checklists</p>
+                        </div>
                     </div>
-                    <div>
-                        <p className="text-xs font-bold text-orange-700 dark:text-orange-300">5 dias seguidos!</p>
-                        <p className="text-[10px] text-orange-500 dark:text-orange-400">Sequência de checklists</p>
-                    </div>
-                </div>
+                )}
             </div>
 
             {/* Navigation */}
@@ -123,18 +144,20 @@ export function Sidebar() {
 
             {/* XP Bar + Level */}
             <div data-tour="xp-bar" className="p-4 border-t border-zinc-100 dark:border-zinc-900">
-                <div className="mb-3">
-                    <div className="flex items-center justify-between text-xs mb-1">
-                        <span className="font-bold text-zinc-600 dark:text-zinc-400">Nível 3 — Competente</span>
-                        <span className="text-zinc-400">2510 / 3000 XP</span>
+                {profile && (
+                    <div className="mb-3">
+                        <div className="flex items-center justify-between text-xs mb-1">
+                            <span className="font-bold text-zinc-600 dark:text-zinc-400">Nível {profile.level}</span>
+                            <span className="text-zinc-400">{profile.total_xp} / {profile.level * 1000} XP</span>
+                        </div>
+                        <div className="w-full h-2 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                            <div
+                                className="h-full bg-gradient-to-r from-amber-400 to-orange-500 rounded-full transition-all"
+                                style={{ width: `${Math.min((profile.total_xp / (profile.level * 1000)) * 100, 100)}%` }}
+                            />
+                        </div>
                     </div>
-                    <div className="w-full h-2 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
-                        <div
-                            className="h-full bg-gradient-to-r from-amber-400 to-orange-500 rounded-full transition-all"
-                            style={{ width: "83%" }}
-                        />
-                    </div>
-                </div>
+                )}
 
                 <button
                     onClick={handleLogout}

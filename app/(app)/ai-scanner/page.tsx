@@ -7,28 +7,24 @@ import { cn } from "@/lib/utils";
 
 export default function AiScannerPage() {
     const [scanState, setScanState] = useState<"idle" | "scanning" | "result_success" | "result_danger">("idle");
-    const [scanType, setScanType] = useState<"temperature" | "label">("label");
-
-    // Mock progress for simulation
+    const [scanType, setScanType] = useState<"general" | "equipment">("equipment");
     const [progress, setProgress] = useState(0);
 
-    const startScan = (type: "temperature" | "label") => {
+    const startScan = (type: "general" | "equipment") => {
         setScanType(type);
         setScanState("scanning");
         setProgress(0);
 
-        // Simulate AI thinking
         let currentProgress = 0;
         const interval = setInterval(() => {
             currentProgress += 10;
             setProgress(currentProgress);
             if (currentProgress >= 100) {
                 clearInterval(interval);
-                // Randomly choose success or danger for demonstration, or hardcode based on type
-                if (type === "label") {
-                    setScanState("result_danger"); // Show auto-escalation
+                if (type === "equipment") {
+                    setScanState("result_danger");
                 } else {
-                    setScanState("result_success"); // Show normal success
+                    setScanState("result_success");
                 }
             }
         }, 300);
@@ -53,26 +49,23 @@ export default function AiScannerPage() {
                     Scanner IA Vision
                 </h1>
                 <p className="text-zinc-500 dark:text-zinc-400 mt-2 max-w-md mx-auto">
-                    Tire fotos de rótulos ou equipamentos. A Inteligência Artificial analisa a imagem, extrai dados (OCR) e identifica não conformidades instantaneamente.
+                    Tire fotos de equipamentos, pratos ou ambientes. A IA analisa a imagem e identifica não conformidades instantaneamente, auto-escalonando problemas graves.
                 </p>
             </div>
 
             {/* Camera Viewfinder Mock */}
             <div className="bg-zinc-900 dark:bg-black rounded-3xl overflow-hidden relative aspect-[4/3] md:aspect-video shadow-2xl ring-1 ring-zinc-800">
-                {/* Visualizer Frame */}
                 <div className="absolute inset-0 z-0">
-                    {/* Simulated Camera Feed */}
                     <img
-                        src={scanType === "label"
-                            ? "https://images.unsplash.com/photo-1590779033100-9f60a05a013d?q=80&w=640"
-                            : "https://images.unsplash.com/photo-1584346133934-a3afd2a33c4c?q=80&w=640"
+                        src={scanType === "equipment"
+                            ? "https://images.unsplash.com/photo-1584346133934-a3afd2a33c4c?q=80&w=640"
+                            : "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?q=80&w=640"
                         }
                         alt="Camera Feed"
                         className={cn("w-full h-full object-cover opacity-60 transition-all duration-1000", scanState !== "idle" && "blur-sm brightness-50")}
                     />
                 </div>
 
-                {/* HUD Elements */}
                 <div className="absolute inset-0 z-10 p-6 flex flex-col justify-between">
                     <div className="flex justify-between items-start">
                         <div className="bg-black/50 backdrop-blur-md px-3 py-1.5 rounded-full text-white text-xs font-bold border border-white/10 flex items-center gap-2">
@@ -81,22 +74,21 @@ export default function AiScannerPage() {
                         {scanState === "idle" && (
                             <div className="flex bg-black/50 backdrop-blur-md rounded-xl p-1 border border-white/10">
                                 <button
-                                    onClick={() => setScanType("label")}
-                                    className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition-colors", scanType === "label" ? "bg-white text-black" : "text-white")}
+                                    onClick={() => setScanType("equipment")}
+                                    className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition-colors", scanType === "equipment" ? "bg-white text-black" : "text-white")}
                                 >
-                                    Rótulos
+                                    Equipamentos
                                 </button>
                                 <button
-                                    onClick={() => setScanType("temperature")}
-                                    className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition-colors", scanType === "temperature" ? "bg-white text-black" : "text-white")}
+                                    onClick={() => setScanType("general")}
+                                    className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition-colors", scanType === "general" ? "bg-white text-black" : "text-white")}
                                 >
-                                    Visão Geral
+                                    Ambiente
                                 </button>
                             </div>
                         )}
                     </div>
 
-                    {/* Interactive Area */}
                     <div className="flex-1 flex items-center justify-center relative">
                         {scanState === "idle" && (
                             <div className="w-48 h-48 border-2 border-white/40 rounded-2xl relative">
@@ -120,7 +112,7 @@ export default function AiScannerPage() {
                                     <Bot className="w-6 h-6 text-white absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
                                 </div>
                                 <h3 className="text-white font-bold mb-1">Processando Imagem</h3>
-                                <p className="text-white/60 text-xs mb-4">A IA está lendo o contexto...</p>
+                                <p className="text-white/60 text-xs mb-4">A IA está analisando a estrutura...</p>
                                 <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
                                     <motion.div
                                         className="h-full bg-gradient-to-r from-indigo-500 to-violet-500"
@@ -147,14 +139,13 @@ export default function AiScannerPage() {
                                             <FileWarning className="w-6 h-6" />
                                         </div>
                                         <div>
-                                            <h4 className="font-bold text-zinc-900 dark:text-zinc-50">Produto Vencido Identificado (OCR)</h4>
+                                            <h4 className="font-bold text-zinc-900 dark:text-zinc-50">Equipamento com Problema</h4>
                                             <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1 pb-2 border-b border-zinc-100 dark:border-zinc-800">
-                                                A IA extraiu as seguintes informações do rótulo:
+                                                A IA detectou que o painel de temperatura está desligado.
                                             </p>
                                             <ul className="text-sm space-y-1 mt-2 mb-4">
-                                                <li><strong className="text-zinc-700 dark:text-zinc-300">Produto:</strong> Molho de Tomate Tradicional</li>
-                                                <li><strong className="text-zinc-700 dark:text-zinc-300">Lote:</strong> TX-99201</li>
-                                                <li><strong className="text-zinc-700 dark:text-zinc-300">Validade:</strong> <span className="text-rose-500 font-bold">12/Fev/2026 (Expirado)</span></li>
+                                                <li><strong className="text-zinc-700 dark:text-zinc-300">Equipamento:</strong> Câmara Fria Principal</li>
+                                                <li><strong className="text-zinc-700 dark:text-zinc-300">Análise Visão:</strong> <span className="text-rose-500 font-bold">Painel Inativo</span></li>
                                             </ul>
                                         </div>
                                     </div>
@@ -169,7 +160,7 @@ export default function AiScannerPage() {
                                                 <span className="bg-rose-500 text-white text-[9px] px-1.5 py-0.5 rounded uppercase tracking-wider">Automático</span>
                                             </h5>
                                             <p className="text-xs text-rose-700/80 dark:text-rose-400/80 mt-1">
-                                                Um Plano de Ação foi gerado: "Descartar Produto".<br />
+                                                Um Plano de Ação foi gerado: "Abertura de Manutenção Emergencial".<br />
                                                 O Gerente e o Supervisor foram notificados via WhatsApp.
                                             </p>
                                         </div>
@@ -188,7 +179,7 @@ export default function AiScannerPage() {
                                     <CheckCircle2 className="w-8 h-8" />
                                 </div>
                                 <h3 className="font-bold text-lg">Visão Limpa</h3>
-                                <p className="text-emerald-100 text-sm mt-1 mb-4">Nenhuma anomalia identificada no equipamento.</p>
+                                <p className="text-emerald-100 text-sm mt-1 mb-4">Nenhuma anomalia visual identificada no ambiente.</p>
                                 <div className="bg-black/20 px-4 py-2 rounded-lg text-xs font-mono">
                                     Confiança da IA: 98.4%
                                 </div>
@@ -222,9 +213,9 @@ export default function AiScannerPage() {
             <div className="bg-indigo-50 border border-indigo-100 dark:bg-indigo-500/10 dark:border-indigo-500/20 rounded-2xl p-5 flex items-start gap-4 text-sm mt-6">
                 <Smartphone className="w-6 h-6 text-indigo-500 shrink-0" />
                 <div>
-                    <strong className="text-zinc-900 dark:text-zinc-50 block mb-1">Tecnologia OCR & Auto-escalonamento (IDs 22, 23, 37)</strong>
+                    <strong className="text-zinc-900 dark:text-zinc-50 block mb-1">Tecnologia de Auto-escalonamento (ID 22, 37)</strong>
                     <p className="text-zinc-600 dark:text-zinc-400">
-                        O app usa modelos de Visão Computacional de Borda. Basta focar a câmera no rótulo para ele extrair instantaneamente Lote e Validade. Caso encontre problemas críticos (como expiração), ele gera um Plano de Ação automaticamente sem intervenção humana, e avisa supervisores via WhatsApp.
+                        O app usa processamento contínuo para verificar falhas nos equipamentos e locais de trabalho. Caso encontre problemas críticos (como refrigeradores com o painel apagado ou itens visivelmente avariados indicando risco à temperatura), gera um Plano de Ação automaticamente sem intervenção humana, e avisa supervisores instantaneamente.
                     </p>
                 </div>
             </div>

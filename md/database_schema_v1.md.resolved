@@ -1,0 +1,137 @@
+# Schema de Banco de Dados - ChecklistApp (Supabase)
+
+Abaixo descrevemos o esquema de banco de dados recomendado para dar suporte a todas as funcionalidades implementadas até o momento: Construtor de Checklists, Gamificação, Avaliação 360, Planos de Ação, Setores (QR Codes) e IA.
+
+## Tabelas Principais (Core)
+
+### 1. `profiles` (Usuarios colaborando e Gestores)
+- [id](file:///e:/Projetos/Rascunhos/RoadMap/components/shared/Sidebar.tsx#57-150) (uuid, PK, references auth.users)
+- `name` (text)
+- `email` (text)
+- `role` (text) - ex: 'admin', 'manager', 'collaborator'
+- `sector_id` (uuid, FK to sectors) - Setor primário do colaborador
+- `avatar_url` (text)
+- `total_xp` (int, default 0) - Pontuação geral na gamificação
+- `level` (int, default 1) - Nível atual
+- `streak_days` (int, default 0) - Sequência atual de dias
+- `streak_shield_available` (boolean, default true)
+- `created_at` (timestamp)
+
+### 2. `sectors` (Setores / Áreas para QR Codes e Filtros)
+- [id](file:///e:/Projetos/Rascunhos/RoadMap/components/shared/Sidebar.tsx#57-150) (uuid, PK)
+- `name` (text) - ex: 'Cozinha', 'Salão'
+- `icon` (text)
+- `description` (text)
+- `created_at` (timestamp)
+
+---
+
+## Checklists e Templates
+
+### 3. `checklist_templates`
+- [id](file:///e:/Projetos/Rascunhos/RoadMap/components/shared/Sidebar.tsx#57-150) (uuid, PK)
+- `title` (text)
+- `description` (text)
+- `sector_id` (uuid, FK to sectors) - Opcional, setor alvo
+- `version` (int) - Suporte a versionamento
+- `is_active` (boolean)
+- `created_at` (timestamp)
+
+### 4. `template_questions` (Perguntas organizadas por template)
+- [id](file:///e:/Projetos/Rascunhos/RoadMap/components/shared/Sidebar.tsx#57-150) (uuid, PK)
+- `template_id` (uuid, FK to checklist_templates)
+- `section` (text) - ex: 'Equipamentos', 'Limpeza'
+- `order_index` (int)
+- `title` (text)
+- `type` (text) - 'yes_no', 'text', 'photo', etc
+- `is_required` (boolean)
+- `weight` (int) - Peso da pergunta no Score (Gamificação)
+- `conditional_rules` (jsonb) - Regra condicional ex: mostrar se a resposta anterior for Não
+- `instruction_media_url` (text) - Foto ou vídeo explicativo
+- `created_at` (timestamp)
+
+### 5. `checklists` (Instâncias de execução - respostas)
+- [id](file:///e:/Projetos/Rascunhos/RoadMap/components/shared/Sidebar.tsx#57-150) (uuid, PK)
+- `template_id` (uuid, FK to checklist_templates)
+- `user_id` (uuid, FK to profiles)
+- `sector_id` (uuid, FK to sectors)
+- `status` (text) - 'draft', 'completed'
+- `score` (numeric) - Conformidade de 0 a 100
+- `started_at` (timestamp)
+- `completed_at` (timestamp)
+
+### 6. `checklist_responses`
+- [id](file:///e:/Projetos/Rascunhos/RoadMap/components/shared/Sidebar.tsx#57-150) (uuid, PK)
+- `checklist_id` (uuid, FK to checklists)
+- `question_id` (uuid, FK to template_questions)
+- `answer_value` (text / json)
+- `has_issue` (boolean) - Identifica não-conformidade auto
+- `media_urls` (text[]) - Fotos enviadas post-análise
+- `ai_analysis_result` (jsonb) - Retorno do OCR/Visão IA
+- `created_at` (timestamp)
+
+---
+
+## Planos de Ação e Auditorias
+
+### 7. `action_plans` (Gerados automaticamente em caso de falhas críticas)
+- [id](file:///e:/Projetos/Rascunhos/RoadMap/components/shared/Sidebar.tsx#57-150) (uuid, PK)
+- `checklist_response_id` (uuid, FK to checklist_responses)
+- `assignee_id` (uuid, FK to profiles)
+- `title` (text)
+- `description` (text)
+- `status` (text) - 'pending', 'in_progress', 'resolved'
+- `priority` (text) - 'high', 'medium', 'low'
+- `due_date` (timestamp)
+- `resolved_at` (timestamp)
+
+---
+
+## Gamificação e Engajamento
+
+### 8. `user_badges` (Conquistas desbloqueadas)
+- [id](file:///e:/Projetos/Rascunhos/RoadMap/components/shared/Sidebar.tsx#57-150) (uuid, PK)
+- `user_id` (uuid, FK to profiles)
+- `badge_id` (text) - ex: 'master_appcc'
+- `unlocked_at` (timestamp)
+
+### 9. `seasons` (Ligas/Temporadas do Ranking)
+- [id](file:///e:/Projetos/Rascunhos/RoadMap/components/shared/Sidebar.tsx#57-150) (uuid, PK)
+- `title` (text) - ex: 'Março 2026'
+- `start_date` (timestamp)
+- `end_date` (timestamp)
+- `is_active` (boolean)
+
+### 10. `season_leaderboard` (Pontuação por temporada)
+- `season_id` (uuid, FK to seasons)
+- `user_id` (uuid, FK to profiles)
+- `xp_earned` (int)
+PK: (season_id, user_id)
+
+---
+
+## RH e Avaliações
+
+### 11. `collaborator_evaluations` (Avaliação 360 Semanal)
+- [id](file:///e:/Projetos/Rascunhos/RoadMap/components/shared/Sidebar.tsx#57-150) (uuid, PK)
+- `evaluator_id` (uuid, FK to profiles) - Gestor
+- `collaborator_id` (uuid, FK to profiles)
+- `created_at` (timestamp)
+- `overall_rating` (numeric) - 1 a 5
+- `overall_comment` (text)
+
+### 12. `evaluation_categories` (Pontuação por critério da avaliação)
+- [id](file:///e:/Projetos/Rascunhos/RoadMap/components/shared/Sidebar.tsx#57-150) (uuid, PK)
+- `evaluation_id` (uuid, FK to collaborator_evaluations)
+- `category_name` (text) - ex: 'Execução do checklist'
+- `rating` (int) - 1 a 5
+- `comment` (text)
+
+---
+
+## Recomendações de RLS (Row Level Security)
+
+- **profiles**: Leitura para todos da empresa. Escrita apenas pelo admin ou pelo próprio user (avatar, etc).
+- **checklists e checklist_responses**: Colaboradores podem ler/escrever os seus próprios; Gestores e Admins podem ler de todos.
+- **collaborator_evaluations**: Colaboradores podem ler apenas os deles; Gestores podem escrever relatórios sobre os subordinados.
+- **template_questions / sectors**: Leitura pública. Escrita apenas por admins ou gestores.

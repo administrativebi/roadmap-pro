@@ -31,6 +31,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { createClient } from "@/lib/supabase/client";
+import { useEffect, useState } from "react";
 
 const mockChartData = [
     { date: "01/02", completed: 5, total: 8 },
@@ -120,6 +122,69 @@ const itemVariants = {
 };
 
 export default function DashboardPage() {
+    const supabase = createClient();
+    const [profile, setProfile] = useState<any>(null);
+    const [statsData, setStatsData] = useState({
+        completed: 0,
+        rate: "0%",
+        score: "0",
+        rank: "#-"
+    });
+    const [topRankingData, setTopRankingData] = useState<any[]>([]);
+
+    useEffect(() => {
+        async function loadDashboardData() {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+
+            // 1. Profile
+            const { data: p } = await supabase
+                .from("profiles")
+                .select("id, name, level, total_xp, streak_days")
+                .eq("id", user.id)
+                .single();
+            setProfile(p);
+
+            // 2. Rankings
+            const { data: allProfiles } = await supabase
+                .from("profiles")
+                .select("id, name, total_xp")
+                .order("total_xp", { ascending: false });
+
+            if (allProfiles) {
+                const userRankIndex = allProfiles.findIndex(x => x.id === user.id);
+                const userRank = userRankIndex >= 0 ? userRankIndex + 1 : "-";
+
+                // Format Top 3
+                const top3 = allProfiles.slice(0, 3).map(x => ({
+                    id: x.id,
+                    name: x.name,
+                    score: x.total_xp || 0,
+                    avatar: x.name ? x.name.substring(0, 2).toUpperCase() : "NA",
+                    isYou: x.id === user.id
+                }));
+
+                // If user is not in top 3, we can optionally append them, but mock layout only expects 3
+                setTopRankingData(top3);
+
+                // Checklists concluídos pelo user
+                const { count: checklistsCount } = await supabase
+                    .from("checklists")
+                    .select("*", { count: "exact", head: true })
+                    .eq("assigned_to", user.id)
+                    .eq("status", "completed");
+
+                setStatsData({
+                    completed: checklistsCount || 0,
+                    rate: "87%", // Mock
+                    score: "92", // Mock
+                    rank: `#${userRank}`
+                });
+            }
+        }
+        loadDashboardData();
+    }, [supabase]);
+
     return (
         <motion.div
             variants={containerVariants}
@@ -134,7 +199,7 @@ export default function DashboardPage() {
             >
                 <div className="flex items-center justify-between">
                     <div>
-                        <h1 className="text-2xl font-bold">Olá, Roberto! 👋</h1>
+                        <h1 className="text-2xl font-bold">Olá, {profile ? profile.name?.split(' ')[0] : "Colaborador"}! 👋</h1>
                         <p className="text-zinc-400 dark:text-zinc-500 mt-1 text-sm">
                             Visão geral da produtividade do seu restaurante
                         </p>
@@ -142,12 +207,12 @@ export default function DashboardPage() {
                     <div className="flex items-center gap-3">
                         <div className="bg-gradient-to-br from-orange-400 to-red-500 rounded-xl p-4 text-center shadow-lg">
                             <Flame className="w-6 h-6 text-white mx-auto mb-1" />
-                            <p className="text-xl font-black text-white">5</p>
+                            <p className="text-xl font-black text-white">{profile ? profile.streak_days : "0"}</p>
                             <p className="text-[10px] text-white/70 font-semibold">DIAS</p>
                         </div>
                         <div className="bg-white/10 dark:bg-black/10 rounded-xl p-4 text-center backdrop-blur-sm">
                             <Star className="w-6 h-6 text-amber-400 mx-auto mb-1" />
-                            <p className="text-xl font-black">2.510</p>
+                            <p className="text-xl font-black">{profile ? profile.total_xp.toLocaleString('pt-BR') : "0"}</p>
                             <p className="text-[10px] text-white/50 dark:text-zinc-500 font-semibold">XP TOTAL</p>
                         </div>
                     </div>
@@ -159,28 +224,49 @@ export default function DashboardPage() {
                 variants={containerVariants}
                 className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
             >
-                {stats.map((stat) => {
-                    const Icon = stat.icon;
-                    return (
-                        <motion.div
-                            key={stat.label}
-                            variants={itemVariants}
-                            whileHover={{ y: -4, scale: 1.02 }}
-                            className="bg-white dark:bg-zinc-950 rounded-2xl border border-zinc-100 dark:border-zinc-900 p-5 hover:shadow-xl transition-all"
-                        >
-                            <div className="flex items-center justify-between mb-3">
-                                <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center", stat.iconBg)}>
-                                    <Icon className="w-5 h-5 text-white" />
-                                </div>
-                                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
-                                    {stat.change}
-                                </span>
-                            </div>
-                            <p className="text-3xl font-black text-zinc-900 dark:text-zinc-50">{stat.value}</p>
-                            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 font-medium">{stat.label}</p>
-                        </motion.div>
-                    );
-                })}
+                {/* Checklists Concluídos */}
+                <motion.div variants={itemVariants} whileHover={{ y: -4, scale: 1.02 }} className="bg-white dark:bg-zinc-950 rounded-2xl border border-zinc-100 dark:border-zinc-900 p-5 hover:shadow-xl transition-all">
+                    <div className="flex items-center justify-between mb-3">
+                        <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-emerald-500">
+                            <ClipboardCheck className="w-5 h-5 text-white" />
+                        </div>
+                    </div>
+                    <p className="text-3xl font-black text-zinc-900 dark:text-zinc-50">{statsData.completed}</p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 font-medium">Checklists Concluídos</p>
+                </motion.div>
+
+                {/* Taxa de Conclusão */}
+                <motion.div variants={itemVariants} whileHover={{ y: -4, scale: 1.02 }} className="bg-white dark:bg-zinc-950 rounded-2xl border border-zinc-100 dark:border-zinc-900 p-5 hover:shadow-xl transition-all">
+                    <div className="flex items-center justify-between mb-3">
+                        <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-blue-500">
+                            <TrendingUp className="w-5 h-5 text-white" />
+                        </div>
+                    </div>
+                    <p className="text-3xl font-black text-zinc-900 dark:text-zinc-50">{statsData.rate}</p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 font-medium">Taxa de Conclusão</p>
+                </motion.div>
+
+                {/* Score */}
+                <motion.div variants={itemVariants} whileHover={{ y: -4, scale: 1.02 }} className="bg-white dark:bg-zinc-950 rounded-2xl border border-zinc-100 dark:border-zinc-900 p-5 hover:shadow-xl transition-all">
+                    <div className="flex items-center justify-between mb-3">
+                        <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-amber-500">
+                            <Target className="w-5 h-5 text-white" />
+                        </div>
+                    </div>
+                    <p className="text-3xl font-black text-zinc-900 dark:text-zinc-50">{statsData.score}</p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 font-medium">Pontuação Média</p>
+                </motion.div>
+
+                {/* Seu Ranking */}
+                <motion.div variants={itemVariants} whileHover={{ y: -4, scale: 1.02 }} className="bg-white dark:bg-zinc-950 rounded-2xl border border-zinc-100 dark:border-zinc-900 p-5 hover:shadow-xl transition-all">
+                    <div className="flex items-center justify-between mb-3">
+                        <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-purple-500">
+                            <Award className="w-5 h-5 text-white" />
+                        </div>
+                    </div>
+                    <p className="text-3xl font-black text-zinc-900 dark:text-zinc-50">{statsData.rank}</p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 font-medium">Seu Ranking</p>
+                </motion.div>
             </motion.div>
 
             {/* Desafios Semanais */}
@@ -360,9 +446,9 @@ export default function DashboardPage() {
                         </Link>
                     </div>
                     <div className="space-y-3">
-                        {topRanking.map((user, i) => (
+                        {topRankingData.length > 0 ? topRankingData.map((user, i) => (
                             <motion.div
-                                key={i}
+                                key={user.id || i}
                                 whileHover={{ x: 4 }}
                                 className={cn(
                                     "flex items-center gap-3 p-3 rounded-xl transition-all",
@@ -380,17 +466,19 @@ export default function DashboardPage() {
                                 <div className="w-9 h-9 rounded-full bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center text-xs font-bold text-zinc-600 dark:text-zinc-300">
                                     {user.avatar}
                                 </div>
-                                <div className="flex-1">
-                                    <p className={cn("text-sm font-semibold", user.isYou ? "text-amber-700 dark:text-amber-300" : "text-zinc-900 dark:text-zinc-50")}>
+                                <div className="flex-1 min-w-0">
+                                    <p className={cn("text-sm font-semibold truncate", user.isYou ? "text-amber-700 dark:text-amber-300" : "text-zinc-900 dark:text-zinc-50")}>
                                         {user.name}
                                         {user.isYou && <span className="ml-1.5 text-[10px] bg-amber-200 dark:bg-amber-800 px-1.5 py-0.5 rounded-full text-amber-800 dark:text-amber-200">Você</span>}
                                     </p>
                                 </div>
-                                <p className="font-bold text-zinc-900 dark:text-zinc-50 tabular-nums text-sm">
+                                <p className="font-bold text-zinc-900 dark:text-zinc-50 tabular-nums text-sm shrink-0">
                                     {user.score.toLocaleString("pt-BR")}
                                 </p>
                             </motion.div>
-                        ))}
+                        )) : (
+                            <p className="text-zinc-500 text-sm text-center py-4">Carregando...</p>
+                        )}
                     </div>
                 </motion.div>
             </div>

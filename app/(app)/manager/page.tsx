@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { createClient } from "@/lib/supabase/client";
 import { motion } from "framer-motion";
 import {
     BarChart3,
@@ -61,6 +62,48 @@ const topCollaborators = [
 
 export default function ManagerDashboard() {
     const [period, setPeriod] = useState("30d");
+    const [stats, setStats] = useState({
+        collabCount: 0,
+        nonConformities: 0,
+        checklistsCount: 0
+    });
+    const [topCollabs, setTopCollabs] = useState<any[]>([]);
+
+    useEffect(() => {
+        async function fetchDashboardData() {
+            const supabase = createClient();
+
+            // 1. Total de Colaboradores
+            const { count: cCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
+
+            // 2. Não Conformidades
+            const { count: nfCount } = await supabase.from('checklist_responses').select('*', { count: 'exact', head: true }).eq('has_issue', true);
+
+            // 3. Top Colaboradores (Order by XP)
+            const { data: top } = await supabase.from('profiles')
+                .select('name, total_xp, streak_days')
+                .order('total_xp', { ascending: false })
+                .limit(5);
+
+            setStats({
+                collabCount: cCount || 0,
+                nonConformities: nfCount || 0,
+                checklistsCount: 0
+            });
+
+            if (top) {
+                const formattedTop = top.map((t, i) => ({
+                    name: t.name || 'Sem Nome',
+                    avatar: ["🧑‍🍳", "👩‍🍳", "👨‍🍳", "👩", "🧑"][i % 5], // mock avatar
+                    score: t.total_xp || 0,
+                    streak: t.streak_days || 0,
+                    checklists: Math.floor(Math.random() * 20) + 10 // Mock até termos contagem real agregada
+                }));
+                setTopCollabs(formattedTop);
+            }
+        }
+        fetchDashboardData();
+    }, []);
 
     return (
         <div className="p-6 max-w-7xl mx-auto space-y-6">
@@ -124,8 +167,8 @@ export default function ManagerDashboard() {
                         <Users className="w-4 h-4 text-zinc-400" />
                         <span className="text-sm font-medium text-zinc-500">Colaboradores</span>
                     </div>
-                    <p className="text-3xl font-black text-zinc-900 dark:text-zinc-50">18</p>
-                    <p className="text-xs text-zinc-400 mt-1">14 ativos hoje</p>
+                    <p className="text-3xl font-black text-zinc-900 dark:text-zinc-50">{stats.collabCount}</p>
+                    <p className="text-xs text-zinc-400 mt-1">Ativos na plataforma</p>
                 </div>
 
                 <div className="bg-white dark:bg-zinc-950 rounded-2xl border border-zinc-100 dark:border-zinc-900 p-5">
@@ -133,10 +176,10 @@ export default function ManagerDashboard() {
                         <Shield className="w-4 h-4 text-zinc-400" />
                         <span className="text-sm font-medium text-zinc-500">Não Conformidades</span>
                     </div>
-                    <p className="text-3xl font-black text-red-500">15</p>
+                    <p className="text-3xl font-black text-red-500">{stats.nonConformities}</p>
                     <div className="flex items-center gap-1 mt-1 text-xs text-red-500 font-semibold">
                         <TrendingUp className="w-3 h-3" />
-                        +3 vs período anterior
+                        Atenção necessária
                     </div>
                 </div>
             </div>
@@ -246,9 +289,9 @@ export default function ManagerDashboard() {
                         Top Colaboradores
                     </h3>
                     <div className="space-y-3">
-                        {topCollaborators.map((collab, i) => (
+                        {topCollabs.length > 0 ? topCollabs.map((collab, i) => (
                             <motion.div
-                                key={collab.name}
+                                key={collab.name + i}
                                 initial={{ opacity: 0, x: -10 }}
                                 animate={{ opacity: 1, x: 0 }}
                                 transition={{ delay: i * 0.08 }}
@@ -268,7 +311,9 @@ export default function ManagerDashboard() {
                                 </div>
                                 <span className="text-sm font-bold text-amber-500">{collab.score.toLocaleString()} XP</span>
                             </motion.div>
-                        ))}
+                        )) : (
+                            <p className="text-zinc-500 text-sm text-center py-4">Carregando ranking...</p>
+                        )}
                     </div>
                 </div>
 

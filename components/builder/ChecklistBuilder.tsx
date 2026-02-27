@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { motion, AnimatePresence, Reorder } from "framer-motion";
 import {
     Plus, GripVertical, Trash2, Copy, Settings2,
     ChevronDown, ChevronUp, Save, Eye, History,
     Zap, Image as ImageIcon, Weight, Layers,
-    FileText, Sparkles, MoreVertical, Check,
+    FileText, Sparkles, MoreVertical, Check, Loader2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -16,6 +16,7 @@ import {
 import { QuestionEditor } from "./QuestionEditor";
 import { TemplateManager } from "./TemplateManager";
 import { VersionHistory } from "./VersionHistory";
+import { createClient } from "@/lib/supabase/client";
 
 function generateId() {
     return `id_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -77,7 +78,7 @@ const initialSections: ChecklistSection[] = [
     },
 ];
 
-export function ChecklistBuilder() {
+export function ChecklistBuilder({ templateId, onSave }: { templateId?: string | null, onSave?: () => void }) {
     const [sections, setSections] = useState<ChecklistSection[]>(initialSections);
     const [templateName, setTemplateName] = useState("Checklist de Abertura — Cozinha");
     const [selectedQuestion, setSelectedQuestion] = useState<string | null>(null);
@@ -87,6 +88,96 @@ export function ChecklistBuilder() {
     const [collapsedSections, setCollapsedSections] = useState<string[]>([]);
     const [dragOverSection, setDragOverSection] = useState<string | null>(null);
     const [saved, setSaved] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [isLoadingTemplate, setIsLoadingTemplate] = useState(false);
+    const [sectors, setSectors] = useState<{ id: string, name: string }[]>([]);
+    const [sectorId, setSectorId] = useState<string>("");
+    const supabase = createClient();
+
+    useEffect(() => {
+        async function fetchSectors() {
+            const { data } = await supabase.from('sectors').select('id, name').order('name');
+            if (data) setSectors(data);
+        }
+        fetchSectors();
+    }, [supabase]);
+
+    useEffect(() => {
+        if (!templateId) return;
+
+        async function loadTemplate() {
+            setIsLoadingTemplate(true);
+            try {
+                // Fetch template
+                const { data: tData, error: tError } = await supabase
+                    .from("checklist_templates")
+                    .select("*")
+                    .eq("id", templateId)
+                    .single();
+
+                if (tError) throw tError;
+                if (tData) {
+                    setTemplateName(tData.title);
+                    setSectorId(tData.sector_id || "");
+                }
+
+                // Fetch questions
+                const { data: qData, error: qError } = await supabase
+                    .from("template_questions")
+                    .select("*")
+                    .eq("template_id", templateId)
+                    .order("order_index", { ascending: true });
+
+                if (qError) throw qError;
+
+                if (qData && qData.length > 0) {
+                    // Group questions back into sections
+                    const sectionMap = new Map<string, ChecklistSection>();
+
+                    for (const q of qData) {
+                        try {
+                            const sectionMeta = JSON.parse(q.section);
+                            if (!sectionMap.has(sectionMeta.id)) {
+                                sectionMap.set(sectionMeta.id, {
+                                    id: sectionMeta.id,
+                                    title: sectionMeta.title,
+                                    description: sectionMeta.description || "",
+                                    color: sectionMeta.color || "#10b981",
+                                    icon: sectionMeta.icon || "🧹",
+                                    order: sectionMeta.order || 0,
+                                    questions: []
+                                });
+                            }
+
+                            const sec = sectionMap.get(sectionMeta.id)!;
+                            sec.questions.push({
+                                id: generateId(),
+                                text: q.title,
+                                type: q.type as any,
+                                required: q.is_required,
+                                weight: q.weight,
+                                mediaInstructions: q.instruction_media_url ? [{ id: generateId(), type: "image", url: q.instruction_media_url, caption: "" }] : [],
+                                conditionalRules: q.conditional_rules || [],
+                                order: q.order_index
+                            });
+                        } catch (e) {
+                            console.error("Invalid section meta", e);
+                        }
+                    }
+
+                    const loadedSections = Array.from(sectionMap.values()).sort((a, b) => a.order - b.order);
+                    setSections(loadedSections);
+                }
+
+            } catch (err) {
+                console.error("Error loading template", err);
+            } finally {
+                setIsLoadingTemplate(false);
+            }
+        }
+
+        loadTemplate();
+    }, [templateId, supabase]);
 
     const totalQuestions = sections.reduce((sum, s) => sum + s.questions.length, 0);
     const totalWeight = sections.reduce((sum, s) => sum + s.questions.reduce((qs, q) => qs + q.weight, 0), 0);
@@ -154,9 +245,94 @@ export function ChecklistBuilder() {
         }));
     };
 
-    const handleSave = () => {
-        setSaved(true);
-        setTimeout(() => setSaved(false), 3000);
+    const handleSave = async () => {
+        setIsSaving(true);
+        try {
+            let currentTemplateId = templateId;
+
+            if (currentTemplateId) {
+                // Update
+                const { error: templateError } = await supabase
+                    .from("checklist_templates")
+                    .update({
+                        title: templateName,
+                        description: "Template editado via construtor",
+                        sector_id: sectorId || null
+                    })
+                    .eq("id", currentTemplateId);
+
+                if (templateError) throw templateError;
+
+                // Delete old questions
+                const { error: delError } = await supabase
+                    .from("template_questions")
+                    .delete()
+                    .eq("template_id", currentTemplateId);
+
+                if (delError) throw delError;
+            } else {
+                // Insert
+                const { data: templateData, error: templateError } = await supabase
+                    .from("checklist_templates")
+                    .insert({
+                        title: templateName,
+                        description: "Template gerado via construtor",
+                        sector_id: sectorId || null,
+                        version: 1,
+                        is_active: true
+                    })
+                    .select()
+                    .single();
+
+                if (templateError) throw templateError;
+                currentTemplateId = templateData.id;
+            }
+
+            // Insere perguntas relacionando com as seções em JSON e o ID real do template gerado
+            const questionsToInsert = [];
+            let globalIndex = 0;
+
+            for (const section of sections) {
+                const sectionData = JSON.stringify({
+                    id: section.id,
+                    title: section.title,
+                    icon: section.icon,
+                    color: section.color,
+                    description: section.description,
+                    order: section.order
+                });
+
+                for (const q of section.questions) {
+                    questionsToInsert.push({
+                        template_id: currentTemplateId,
+                        section: sectionData,
+                        order_index: globalIndex++,
+                        title: q.text,
+                        type: q.type,
+                        is_required: q.required,
+                        weight: q.weight,
+                        conditional_rules: q.conditionalRules.length > 0 ? q.conditionalRules : null,
+                        instruction_media_url: q.mediaInstructions?.[0]?.url || null
+                    });
+                }
+            }
+
+            if (questionsToInsert.length > 0) {
+                const { error: qsError } = await supabase.from("template_questions").insert(questionsToInsert);
+                if (qsError) throw qsError;
+            }
+
+            setSaved(true);
+            setTimeout(() => {
+                setSaved(false);
+                if (onSave) onSave();
+            }, 1000);
+        } catch (error) {
+            console.error("Erro ao salvar:", error);
+            alert("Erro ao salvar o checklist. Tente novamente.");
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const handleReorderQuestions = (sectionId: string, newOrder: ChecklistQuestion[]) => {
@@ -170,252 +346,274 @@ export function ChecklistBuilder() {
         <div className="flex gap-6 h-[calc(100vh-2rem)]">
             {/* Main Builder Area */}
             <div className="flex-1 overflow-y-auto space-y-4 pr-2">
-                {/* Header */}
-                <div className="bg-white dark:bg-zinc-950 rounded-2xl border border-zinc-100 dark:border-zinc-900 p-5 sticky top-0 z-10">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3 flex-1">
-                            <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-red-500 rounded-xl flex items-center justify-center shadow-lg">
-                                <Layers className="w-5 h-5 text-white" />
-                            </div>
-                            <div className="flex-1">
-                                <input
-                                    type="text"
-                                    value={templateName}
-                                    onChange={(e) => setTemplateName(e.target.value)}
-                                    className="text-xl font-bold text-zinc-900 dark:text-zinc-50 bg-transparent border-none focus:outline-none w-full"
-                                    placeholder="Nome do checklist..."
-                                />
-                                <div className="flex items-center gap-3 text-xs text-zinc-400 mt-0.5">
-                                    <span>📋 {totalQuestions} perguntas</span>
-                                    <span>📂 {sections.length} seções</span>
-                                    <span>⚖️ Peso total: {totalWeight}</span>
-                                    <span>v3.2</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <button onClick={() => setShowTemplates(true)} className="px-3 py-2 bg-zinc-100 dark:bg-zinc-800 rounded-xl text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all flex items-center gap-1.5">
-                                <Copy className="w-3.5 h-3.5" /> Templates
-                            </button>
-                            <button onClick={() => setShowVersions(true)} className="px-3 py-2 bg-zinc-100 dark:bg-zinc-800 rounded-xl text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all flex items-center gap-1.5">
-                                <History className="w-3.5 h-3.5" /> Versões
-                            </button>
-                            <button onClick={() => setShowPreview(!showPreview)} className={cn("px-3 py-2 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5", showPreview ? "bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300" : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400")}>
-                                <Eye className="w-3.5 h-3.5" /> Preview
-                            </button>
-                            <motion.button
-                                whileTap={{ scale: 0.95 }}
-                                onClick={handleSave}
-                                className={cn("px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5",
-                                    saved ? "bg-emerald-500 text-white" : "bg-gradient-to-r from-orange-500 to-red-500 text-white hover:from-orange-600 hover:to-red-600 shadow-md"
-                                )}
-                            >
-                                {saved ? <><Check className="w-3.5 h-3.5" /> Salvo!</> : <><Save className="w-3.5 h-3.5" /> Salvar</>}
-                            </motion.button>
-                        </div>
+                {isLoadingTemplate ? (
+                    <div className="flex flex-col items-center justify-center h-full p-12 text-zinc-500">
+                        <Loader2 className="w-8 h-8 animate-spin mb-4 text-orange-500" />
+                        <p>Carregando template...</p>
                     </div>
-                </div>
-
-                {/* Sections */}
-                {sections.map((section, si) => {
-                    const isCollapsed = collapsedSections.includes(section.id);
-                    const sectionWeight = section.questions.reduce((sum, q) => sum + q.weight, 0);
-
-                    return (
-                        <motion.div
-                            key={section.id}
-                            initial={{ opacity: 0, y: 15 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: si * 0.05 }}
-                            className="bg-white dark:bg-zinc-950 rounded-2xl border-2 border-zinc-100 dark:border-zinc-800 overflow-hidden"
-                            style={{ borderLeftColor: section.color, borderLeftWidth: 4 }}
-                        >
-                            {/* Section Header */}
-                            <div className="p-4 flex items-center gap-3 bg-zinc-50/50 dark:bg-zinc-900/50">
-                                <div className="cursor-grab active:cursor-grabbing p-1 text-zinc-300 hover:text-zinc-500">
-                                    <GripVertical className="w-5 h-5" />
-                                </div>
-                                <span className="text-xl">{section.icon}</span>
-                                <div className="flex-1 min-w-0">
-                                    <input
-                                        type="text"
-                                        value={section.title}
-                                        onChange={(e) => updateSection(section.id, { title: e.target.value })}
-                                        className="font-bold text-zinc-900 dark:text-zinc-50 bg-transparent border-none focus:outline-none w-full text-sm"
-                                        placeholder="Nome da seção..."
-                                    />
-                                    <input
-                                        type="text"
-                                        value={section.description || ""}
-                                        onChange={(e) => updateSection(section.id, { description: e.target.value })}
-                                        className="text-xs text-zinc-400 bg-transparent border-none focus:outline-none w-full mt-0.5"
-                                        placeholder="Descrição (opcional)..."
-                                    />
-                                </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                    <span className="text-[10px] bg-zinc-100 dark:bg-zinc-800 text-zinc-500 px-2 py-0.5 rounded-full">{section.questions.length} perguntas</span>
-                                    <span className="text-[10px] bg-zinc-100 dark:bg-zinc-800 text-zinc-500 px-2 py-0.5 rounded-full">⚖️ {sectionWeight}</span>
-
-                                    {/* Section Icon Picker */}
-                                    <div className="relative group">
-                                        <button className="p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 transition-all">
-                                            <Settings2 className="w-4 h-4" />
-                                        </button>
-                                        <div className="absolute right-0 top-full mt-1 bg-white dark:bg-zinc-900 rounded-xl shadow-2xl border border-zinc-200 dark:border-zinc-700 p-3 z-20 hidden group-hover:block w-48">
-                                            <p className="text-[10px] font-bold text-zinc-400 mb-2">ÍCONE</p>
-                                            <div className="grid grid-cols-8 gap-1 mb-3">
-                                                {SECTION_ICONS.map((icon) => (
-                                                    <button key={icon} onClick={() => updateSection(section.id, { icon })} className={cn("text-lg p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800", section.icon === icon && "bg-zinc-200 dark:bg-zinc-700")}>
-                                                        {icon}
-                                                    </button>
+                ) : (
+                    <>
+                        {/* Header */}
+                        <div className="bg-white dark:bg-zinc-950 rounded-2xl border border-zinc-100 dark:border-zinc-900 p-5 sticky top-0 z-10">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3 flex-1">
+                                    <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-red-500 rounded-xl flex items-center justify-center shadow-lg">
+                                        <Layers className="w-5 h-5 text-white" />
+                                    </div>
+                                    <div className="flex-1">
+                                        <input
+                                            type="text"
+                                            value={templateName}
+                                            onChange={(e) => setTemplateName(e.target.value)}
+                                            className="text-xl font-bold text-zinc-900 dark:text-zinc-50 bg-transparent border-none focus:outline-none w-full"
+                                            placeholder="Nome do checklist..."
+                                        />
+                                        {sectors.length > 0 && (
+                                            <select
+                                                value={sectorId}
+                                                onChange={(e) => setSectorId(e.target.value)}
+                                                className="mt-1 text-sm bg-transparent border-none text-zinc-500 font-medium focus:outline-none focus:ring-0 cursor-pointer"
+                                            >
+                                                <option value="">-- Vincular a um setor (opcional) --</option>
+                                                {sectors.map(s => (
+                                                    <option key={s.id} value={s.id}>{s.name}</option>
                                                 ))}
+                                            </select>
+                                        )}
+                                        <div className="flex items-center gap-3 text-xs text-zinc-400 mt-1">
+                                            <span>📋 {totalQuestions} perguntas</span>
+                                            <span>📂 {sections.length} seções</span>
+                                            <span>⚖️ Peso total: {totalWeight}</span>
+                                            <span>v3.2</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button onClick={() => setShowTemplates(true)} className="px-3 py-2 bg-zinc-100 dark:bg-zinc-800 rounded-xl text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all flex items-center gap-1.5">
+                                        <Copy className="w-3.5 h-3.5" /> Templates
+                                    </button>
+                                    <button onClick={() => setShowVersions(true)} className="px-3 py-2 bg-zinc-100 dark:bg-zinc-800 rounded-xl text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all flex items-center gap-1.5">
+                                        <History className="w-3.5 h-3.5" /> Versões
+                                    </button>
+                                    <button onClick={() => setShowPreview(!showPreview)} className={cn("px-3 py-2 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5", showPreview ? "bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300" : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400")}>
+                                        <Eye className="w-3.5 h-3.5" /> Preview
+                                    </button>
+                                    <motion.button
+                                        whileTap={{ scale: 0.95 }}
+                                        onClick={handleSave}
+                                        disabled={isSaving}
+                                        className={cn("px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5",
+                                            saved ? "bg-emerald-500 text-white" : "bg-gradient-to-r from-orange-500 to-red-500 text-white hover:from-orange-600 hover:to-red-600 shadow-md disabled:opacity-50"
+                                        )}
+                                    >
+                                        {isSaving ? "Salvando..." : saved ? <><Check className="w-3.5 h-3.5" /> Salvo!</> : <><Save className="w-3.5 h-3.5" /> Salvar</>}
+                                    </motion.button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Sections */}
+                        {sections.map((section, si) => {
+                            const isCollapsed = collapsedSections.includes(section.id);
+                            const sectionWeight = section.questions.reduce((sum, q) => sum + q.weight, 0);
+
+                            return (
+                                <motion.div
+                                    key={section.id}
+                                    initial={{ opacity: 0, y: 15 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: si * 0.05 }}
+                                    className="bg-white dark:bg-zinc-950 rounded-2xl border-2 border-zinc-100 dark:border-zinc-800 overflow-hidden"
+                                    style={{ borderLeftColor: section.color, borderLeftWidth: 4 }}
+                                >
+                                    {/* Section Header */}
+                                    <div className="p-4 flex items-center gap-3 bg-zinc-50/50 dark:bg-zinc-900/50">
+                                        <div className="cursor-grab active:cursor-grabbing p-1 text-zinc-300 hover:text-zinc-500">
+                                            <GripVertical className="w-5 h-5" />
+                                        </div>
+                                        <span className="text-xl">{section.icon}</span>
+                                        <div className="flex-1 min-w-0">
+                                            <input
+                                                type="text"
+                                                value={section.title}
+                                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSection(section.id, { title: e.target.value })}
+                                                className="font-bold text-zinc-900 dark:text-zinc-50 bg-transparent border-none focus:outline-none w-full text-sm"
+                                                placeholder="Nome da seção..."
+                                            />
+                                            <input
+                                                type="text"
+                                                value={section.description || ""}
+                                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSection(section.id, { description: e.target.value })}
+                                                className="text-xs text-zinc-400 bg-transparent border-none focus:outline-none w-full mt-0.5"
+                                                placeholder="Descrição (opcional)..."
+                                            />
+                                        </div>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            <span className="text-[10px] bg-zinc-100 dark:bg-zinc-800 text-zinc-500 px-2 py-0.5 rounded-full">{section.questions.length} perguntas</span>
+                                            <span className="text-[10px] bg-zinc-100 dark:bg-zinc-800 text-zinc-500 px-2 py-0.5 rounded-full">⚖️ {sectionWeight}</span>
+
+                                            {/* Section Icon Picker */}
+                                            <div className="relative group">
+                                                <button className="p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 transition-all">
+                                                    <Settings2 className="w-4 h-4" />
+                                                </button>
+                                                <div className="absolute right-0 top-full mt-1 bg-white dark:bg-zinc-900 rounded-xl shadow-2xl border border-zinc-200 dark:border-zinc-700 p-3 z-20 hidden group-hover:block w-48">
+                                                    <p className="text-[10px] font-bold text-zinc-400 mb-2">ÍCONE</p>
+                                                    <div className="grid grid-cols-8 gap-1 mb-3">
+                                                        {SECTION_ICONS.map((icon) => (
+                                                            <button key={icon} onClick={() => updateSection(section.id, { icon })} className={cn("text-lg p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800", section.icon === icon && "bg-zinc-200 dark:bg-zinc-700")}>
+                                                                {icon}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                    <p className="text-[10px] font-bold text-zinc-400 mb-2">COR</p>
+                                                    <div className="grid grid-cols-8 gap-1">
+                                                        {SECTION_COLORS.map((color) => (
+                                                            <button key={color} onClick={() => updateSection(section.id, { color })} className={cn("w-5 h-5 rounded-full border-2", section.color === color ? "border-zinc-900 dark:border-zinc-100" : "border-transparent")} style={{ backgroundColor: color }} />
+                                                        ))}
+                                                    </div>
+                                                </div>
                                             </div>
-                                            <p className="text-[10px] font-bold text-zinc-400 mb-2">COR</p>
-                                            <div className="grid grid-cols-8 gap-1">
-                                                {SECTION_COLORS.map((color) => (
-                                                    <button key={color} onClick={() => updateSection(section.id, { color })} className={cn("w-5 h-5 rounded-full border-2", section.color === color ? "border-zinc-900 dark:border-zinc-100" : "border-transparent")} style={{ backgroundColor: color }} />
-                                                ))}
-                                            </div>
+
+                                            <button onClick={() => duplicateSection(section.id)} className="p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 transition-all" title="Duplicar seção">
+                                                <Copy className="w-4 h-4" />
+                                            </button>
+                                            <button onClick={() => deleteSection(section.id)} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-950 text-zinc-400 hover:text-red-500 transition-all" title="Excluir seção">
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                            <button onClick={() => toggleSection(section.id)} className="p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 transition-all">
+                                                {isCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+                                            </button>
                                         </div>
                                     </div>
 
-                                    <button onClick={() => duplicateSection(section.id)} className="p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 transition-all" title="Duplicar seção">
-                                        <Copy className="w-4 h-4" />
-                                    </button>
-                                    <button onClick={() => deleteSection(section.id)} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-950 text-zinc-400 hover:text-red-500 transition-all" title="Excluir seção">
-                                        <Trash2 className="w-4 h-4" />
-                                    </button>
-                                    <button onClick={() => toggleSection(section.id)} className="p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 transition-all">
-                                        {isCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Questions */}
-                            <AnimatePresence>
-                                {!isCollapsed && (
-                                    <motion.div
-                                        initial={{ height: 0, opacity: 0 }}
-                                        animate={{ height: "auto", opacity: 1 }}
-                                        exit={{ height: 0, opacity: 0 }}
-                                        className="overflow-hidden"
-                                    >
-                                        <div className="p-3 space-y-2">
-                                            <Reorder.Group
-                                                axis="y"
-                                                values={section.questions}
-                                                onReorder={(newOrder) => handleReorderQuestions(section.id, newOrder)}
-                                                className="space-y-2"
+                                    {/* Questions */}
+                                    <AnimatePresence>
+                                        {!isCollapsed && (
+                                            <motion.div
+                                                initial={{ height: 0, opacity: 0 }}
+                                                animate={{ height: "auto", opacity: 1 }}
+                                                exit={{ height: 0, opacity: 0 }}
+                                                className="overflow-hidden"
                                             >
-                                                {section.questions.map((question, qi) => (
-                                                    <Reorder.Item key={question.id} value={question}>
-                                                        <div
-                                                            className={cn(
-                                                                "group rounded-xl border-2 p-3 transition-all cursor-default",
-                                                                selectedQuestion === question.id
-                                                                    ? "border-orange-400 dark:border-orange-600 bg-orange-50/50 dark:bg-orange-950/10"
-                                                                    : "border-zinc-100 dark:border-zinc-800 hover:border-zinc-200 dark:hover:border-zinc-700",
-                                                                question.conditionalParentId && "ml-8 border-dashed"
-                                                            )}
-                                                            onClick={() => setSelectedQuestion(question.id === selectedQuestion ? null : question.id)}
-                                                        >
-                                                            <div className="flex items-start gap-2">
-                                                                <div className="cursor-grab active:cursor-grabbing p-1 text-zinc-200 dark:text-zinc-600 hover:text-zinc-400 mt-0.5">
-                                                                    <GripVertical className="w-4 h-4" />
-                                                                </div>
+                                                <div className="p-3 space-y-2">
+                                                    <Reorder.Group
+                                                        axis="y"
+                                                        values={section.questions}
+                                                        onReorder={(newOrder) => handleReorderQuestions(section.id, newOrder)}
+                                                        className="space-y-2"
+                                                    >
+                                                        {section.questions.map((question, qi) => (
+                                                            <Reorder.Item key={question.id} value={question}>
+                                                                <div
+                                                                    className={cn(
+                                                                        "group rounded-xl border-2 p-3 transition-all cursor-default",
+                                                                        selectedQuestion === question.id
+                                                                            ? "border-orange-400 dark:border-orange-600 bg-orange-50/50 dark:bg-orange-950/10"
+                                                                            : "border-zinc-100 dark:border-zinc-800 hover:border-zinc-200 dark:hover:border-zinc-700",
+                                                                        question.conditionalParentId && "ml-8 border-dashed"
+                                                                    )}
+                                                                    onClick={() => setSelectedQuestion(question.id === selectedQuestion ? null : question.id)}
+                                                                >
+                                                                    <div className="flex items-start gap-2">
+                                                                        <div className="cursor-grab active:cursor-grabbing p-1 text-zinc-200 dark:text-zinc-600 hover:text-zinc-400 mt-0.5">
+                                                                            <GripVertical className="w-4 h-4" />
+                                                                        </div>
 
-                                                                {/* Question number */}
-                                                                <span className="text-xs font-bold text-zinc-300 dark:text-zinc-600 mt-1.5 w-5 shrink-0">
-                                                                    {question.conditionalParentId ? "↳" : `${qi + 1}`}
-                                                                </span>
-
-                                                                <div className="flex-1 min-w-0">
-                                                                    <input
-                                                                        type="text"
-                                                                        value={question.text}
-                                                                        onChange={(e) => updateQuestion(section.id, question.id, { text: e.target.value })}
-                                                                        className="w-full text-sm font-medium text-zinc-900 dark:text-zinc-50 bg-transparent border-none focus:outline-none"
-                                                                        placeholder="Digite a pergunta..."
-                                                                        onClick={(e) => e.stopPropagation()}
-                                                                    />
-                                                                    <div className="flex items-center gap-2 mt-1 flex-wrap">
-                                                                        {/* Type Badge */}
-                                                                        <span className="text-[10px] px-2 py-0.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-500 rounded-full flex items-center gap-1">
-                                                                            {QUESTION_TYPE_CONFIG[question.type].icon} {QUESTION_TYPE_CONFIG[question.type].label}
+                                                                        {/* Question number */}
+                                                                        <span className="text-xs font-bold text-zinc-300 dark:text-zinc-600 mt-1.5 w-5 shrink-0">
+                                                                            {question.conditionalParentId ? "↳" : `${qi + 1}`}
                                                                         </span>
 
-                                                                        {/* Weight */}
-                                                                        {question.weight > 1 && (
-                                                                            <span className="text-[10px] px-2 py-0.5 bg-amber-100 dark:bg-amber-950 text-amber-600 rounded-full flex items-center gap-1">
-                                                                                <Weight className="w-3 h-3" /> Peso {question.weight}
-                                                                            </span>
-                                                                        )}
+                                                                        <div className="flex-1 min-w-0">
+                                                                            <input
+                                                                                type="text"
+                                                                                value={question.text}
+                                                                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateQuestion(section.id, question.id, { text: e.target.value })}
+                                                                                className="w-full text-sm font-medium text-zinc-900 dark:text-zinc-50 bg-transparent border-none focus:outline-none"
+                                                                                placeholder="Digite a pergunta..."
+                                                                                onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                                                                            />
+                                                                            <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                                                                {/* Type Badge */}
+                                                                                <span className="text-[10px] px-2 py-0.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-500 rounded-full flex items-center gap-1">
+                                                                                    {QUESTION_TYPE_CONFIG[question.type].icon} {QUESTION_TYPE_CONFIG[question.type].label}
+                                                                                </span>
 
-                                                                        {/* Conditional */}
-                                                                        {question.conditionalRules.length > 0 && (
-                                                                            <span className="text-[10px] px-2 py-0.5 bg-violet-100 dark:bg-violet-950 text-violet-600 rounded-full flex items-center gap-1">
-                                                                                <Zap className="w-3 h-3" /> Condicional
-                                                                            </span>
-                                                                        )}
+                                                                                {/* Weight */}
+                                                                                {question.weight > 1 && (
+                                                                                    <span className="text-[10px] px-2 py-0.5 bg-amber-100 dark:bg-amber-950 text-amber-600 rounded-full flex items-center gap-1">
+                                                                                        <Weight className="w-3 h-3" /> Peso {question.weight}
+                                                                                    </span>
+                                                                                )}
 
-                                                                        {/* Media */}
-                                                                        {question.mediaInstructions.length > 0 && (
-                                                                            <span className="text-[10px] px-2 py-0.5 bg-blue-100 dark:bg-blue-950 text-blue-600 rounded-full flex items-center gap-1">
-                                                                                <ImageIcon className="w-3 h-3" /> {question.mediaInstructions.length} mídia
-                                                                            </span>
-                                                                        )}
+                                                                                {/* Conditional */}
+                                                                                {question.conditionalRules.length > 0 && (
+                                                                                    <span className="text-[10px] px-2 py-0.5 bg-violet-100 dark:bg-violet-950 text-violet-600 rounded-full flex items-center gap-1">
+                                                                                        <Zap className="w-3 h-3" /> Condicional
+                                                                                    </span>
+                                                                                )}
 
-                                                                        {/* Required */}
-                                                                        {question.required && (
-                                                                            <span className="text-[10px] text-red-400">*obrigatória</span>
-                                                                        )}
+                                                                                {/* Media */}
+                                                                                {question.mediaInstructions.length > 0 && (
+                                                                                    <span className="text-[10px] px-2 py-0.5 bg-blue-100 dark:bg-blue-950 text-blue-600 rounded-full flex items-center gap-1">
+                                                                                        <ImageIcon className="w-3 h-3" /> {question.mediaInstructions.length} mídia
+                                                                                    </span>
+                                                                                )}
 
-                                                                        {/* Conditional parent indicator */}
-                                                                        {question.conditionalParentId && (
-                                                                            <span className="text-[10px] px-2 py-0.5 bg-violet-50 dark:bg-violet-950/50 text-violet-500 rounded-full">
-                                                                                ↳ Aparece se condição
-                                                                            </span>
-                                                                        )}
+                                                                                {/* Required */}
+                                                                                {question.required && (
+                                                                                    <span className="text-[10px] text-red-400">*obrigatória</span>
+                                                                                )}
+
+                                                                                {/* Conditional parent indicator */}
+                                                                                {question.conditionalParentId && (
+                                                                                    <span className="text-[10px] px-2 py-0.5 bg-violet-50 dark:bg-violet-950/50 text-violet-500 rounded-full">
+                                                                                        ↳ Aparece se condição
+                                                                                    </span>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+
+                                                                        {/* Quick Actions */}
+                                                                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                                                            <button onClick={(e: React.MouseEvent) => { e.stopPropagation(); duplicateQuestion(section.id, question.id); }} className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400" title="Duplicar">
+                                                                                <Copy className="w-3.5 h-3.5" />
+                                                                            </button>
+                                                                            <button onClick={(e: React.MouseEvent) => { e.stopPropagation(); deleteQuestion(section.id, question.id); }} className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-950 text-zinc-400 hover:text-red-500" title="Excluir">
+                                                                                <Trash2 className="w-3.5 h-3.5" />
+                                                                            </button>
+                                                                        </div>
                                                                     </div>
                                                                 </div>
+                                                            </Reorder.Item>
+                                                        ))}
+                                                    </Reorder.Group>
 
-                                                                {/* Quick Actions */}
-                                                                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                                                                    <button onClick={(e) => { e.stopPropagation(); duplicateQuestion(section.id, question.id); }} className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400" title="Duplicar">
-                                                                        <Copy className="w-3.5 h-3.5" />
-                                                                    </button>
-                                                                    <button onClick={(e) => { e.stopPropagation(); deleteQuestion(section.id, question.id); }} className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-950 text-zinc-400 hover:text-red-500" title="Excluir">
-                                                                        <Trash2 className="w-3.5 h-3.5" />
-                                                                    </button>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </Reorder.Item>
-                                                ))}
-                                            </Reorder.Group>
+                                                    {/* Add Question */}
+                                                    <button
+                                                        onClick={() => addQuestion(section.id)}
+                                                        className="w-full py-3 border-2 border-dashed border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-medium text-zinc-400 hover:text-zinc-600 hover:border-zinc-300 dark:hover:border-zinc-600 transition-all flex items-center justify-center gap-2"
+                                                    >
+                                                        <Plus className="w-4 h-4" /> Adicionar Pergunta
+                                                    </button>
+                                                </div>
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
+                                </motion.div>
+                            );
+                        })}
 
-                                            {/* Add Question */}
-                                            <button
-                                                onClick={() => addQuestion(section.id)}
-                                                className="w-full py-3 border-2 border-dashed border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-medium text-zinc-400 hover:text-zinc-600 hover:border-zinc-300 dark:hover:border-zinc-600 transition-all flex items-center justify-center gap-2"
-                                            >
-                                                <Plus className="w-4 h-4" /> Adicionar Pergunta
-                                            </button>
-                                        </div>
-                                    </motion.div>
-                                )}
-                            </AnimatePresence>
-                        </motion.div>
-                    );
-                })}
-
-                {/* Add Section */}
-                <button
-                    onClick={addSection}
-                    className="w-full py-5 bg-white dark:bg-zinc-950 border-2 border-dashed border-zinc-200 dark:border-zinc-700 rounded-2xl text-sm font-semibold text-zinc-400 hover:text-orange-500 hover:border-orange-300 dark:hover:border-orange-700 transition-all flex items-center justify-center gap-2"
-                >
-                    <Layers className="w-5 h-5" /> Adicionar Seção
-                </button>
+                        {/* Add Section */}
+                        <button
+                            onClick={addSection}
+                            className="w-full py-5 bg-white dark:bg-zinc-950 border-2 border-dashed border-zinc-200 dark:border-zinc-700 rounded-2xl text-sm font-semibold text-zinc-400 hover:text-orange-500 hover:border-orange-300 dark:hover:border-orange-700 transition-all flex items-center justify-center gap-2"
+                        >
+                            <Layers className="w-5 h-5" /> Adicionar Seção
+                        </button>
+                    </>
+                )}
             </div>
 
             {/* Right Panel — Question Editor */}
@@ -430,7 +628,7 @@ export function ChecklistBuilder() {
                         <QuestionEditor
                             sections={sections}
                             questionId={selectedQuestion}
-                            onUpdate={(sectionId, questionId, updates) => updateQuestion(sectionId, questionId, updates)}
+                            onUpdate={(sectionId: string, questionId: string, updates: any) => updateQuestion(sectionId, questionId, updates)}
                             onClose={() => setSelectedQuestion(null)}
                         />
                     </motion.div>

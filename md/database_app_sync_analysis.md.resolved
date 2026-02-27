@@ -1,0 +1,59 @@
+# Análise: Banco de Dados Supabase vs Aplicativo (Next.js)
+
+Realizamos uma varredura cruzada entre as tabelas existentes no Supabase (esquema `public`) e as telas/componentes desenvolvidos na pasta `app/` do Next.js. 
+
+Aqui está o status atualizado de integração:
+
+## 🟢 1. Totalmente ou Parcialmente Integrados (Funcionando)
+
+- **`sectors`**: 
+  - **Telas**: `checklists`, `qrcodes`, `builder`
+  - **Status**: Funcionando corretamente. Os setores filtram os checklists, servem para criar os QR Codes direcionados e já são definidos na criação do checklist pelo Builder.
+- **`checklist_templates` & `template_questions`**:
+  - **Telas**: `builder`, `checklists`
+  - **Status**: O *ChecklistBuilder* salva, edita e renderiza corretamente os JSONs avançados de configuração, relacionando com os setores do DB.
+- **`checklists` & `checklist_responses`**:
+  - **Telas**: `checklists/[id]`
+  - **Status**: Execução em tempo real validada. Salvamento de notas (score), status final e dados em andamento (draft) funcionando.
+- **`action_plans`**:
+  - **Telas**: `action-plans`, `checklists/[id]`
+  - **Status**: Geração automática já implementada no final da execução ao esbarrar em uma *Não Conformidade*. O painel [action-plans/page.tsx](file:///e:/Projetos/Rascunhos/RoadMap/app/%28app%29/action-plans/page.tsx) precisa apenas garantir a listagem correta dos items gerados para resolução.
+- **`activity_logs`**:
+  - **Telas**: Log inserido no `checklists/[id]`
+  - **Status**: Os logs de sistema para ganhar pontos foram mapeados, sendo fundamental para o motor de gamificação. Falta ler na interface.
+
+---
+
+## 🟡 2. Necessitam de Integração Visual e de Lógica (Próximos Passos)
+
+As tabelas de recursos cruciais, principalmente Gamificação e Recursos Sociais, já existem, mas as telas ainda operam no modo "Mock (Dados Fakes)" ou estão vazias:
+
+### A. **Sistema de Perfis e Progressão (`profiles`, `user_badges`)**
+- **Onde**: [profile/page.tsx](file:///e:/Projetos/Rascunhos/RoadMap/app/%28app%29/profile/page.tsx), Header (Avatar/Nível)
+- **O que falta**: 
+  - Ler o total de XP da conta real.
+  - Exibir as insígnias e troféus desbloqueados buscando de `user_badges`.
+  - Mecanismo de subida de nível e avatar de acordo com os pontos ganhos logados no banco de dados.
+
+### B. **Competição e Ligas (`seasons`, `season_leaderboard`)**
+- **Onde**: [ranking/page.tsx](file:///e:/Projetos/Rascunhos/RoadMap/app/%28app%29/ranking/page.tsx)
+- **O que falta**:
+  - Consultar a tabela `seasons` para verificar qual é a temporada atual ("Fevereiro 2026").
+  - Atualizar o `ranking` agrupando os pontos dos colaboradores (usar filtros de setor se possível). 
+  - Definir quem ganha Ouro/Prata/Bronze a nível de banco de dados no final da season.
+
+### C. **Missões e Recompensas (`challenges`, `store_items`)**
+- **Onde**: [dashboard/page.tsx](file:///e:/Projetos/Rascunhos/RoadMap/app/%28app%29/dashboard/page.tsx), [rewards/page.tsx](file:///e:/Projetos/Rascunhos/RoadMap/app/%28app%29/rewards/page.tsx)
+- **O que falta**:
+  - No dashboard ou perfil, listar as missões temporárias buscadas na tabela `challenges` e permitir o "resgate" (claim) se concluídas.
+  - Em Lojinha / Benefícios (`rewards`), listar os prêmios físicos ou digitais da base `store_items` para permitir o débito de XP real do usuário em troca da recompensa.
+
+### D. **Avaliações Semanais de Desempenho (`collaborator_evaluations`, etc)**
+- **Onde**: [evaluation/page.tsx](file:///e:/Projetos/Rascunhos/RoadMap/app/%28app%29/evaluation/page.tsx)
+- **O que falta (Pedido Crítico)**: 
+  - O gestor deve ser capaz de abrir o painel, escolher um colaborador e inserir as notas baseado na estrutura `evaluation_categories`. A plataforma precisa salvar isto frequentemente como solicitado na regra: *"Na avaliação o responsável precisa avaliar o colaborador uma vez por semana"*.
+
+## 🎯 Conclusão e Recomendação
+O "Coração" do aplicativo (Criar Checklists -> Passar Checklists -> Gerar Planos de Ação) está consolidado e escrevendo em banco de dados real.
+
+O próximo gargalo mais lógico para amarrarmos as pontas é consolidar **A Avaliação Semanal do Gestor** ou plugar a **Gamificação (Perfil/Lojinha e Ranking)** aos fluxos de XP.

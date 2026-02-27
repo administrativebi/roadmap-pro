@@ -5,34 +5,112 @@ import { Gift, Zap, Ticket, Coffee, Car, Pizza, Calendar, Dice5, Coins, AlertCir
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 
-const MOCK_REWARDS = [
-    { id: 1, title: "Meia Folga", xp: 5000, icon: Calendar, color: "text-blue-500", bg: "bg-blue-100 dark:bg-blue-900/40" },
-    { id: 2, title: "Almoço Especial", xp: 2000, icon: Pizza, color: "text-orange-500", bg: "bg-orange-100 dark:bg-orange-900/40" },
-    { id: 3, title: "Café VIP", xp: 500, icon: Coffee, color: "text-amber-700", bg: "bg-amber-100 dark:bg-amber-900/40" },
-    { id: 4, title: "Vaga VIP Estacionamento", xp: 3000, icon: Car, color: "text-emerald-500", bg: "bg-emerald-100 dark:bg-emerald-900/40", limit: "1 Vaga Livre" },
-];
+import { useEffect } from "react";
+import { createClient } from "@/lib/supabase/client";
+
+// Mapeamento visual para não depender apenas do banco para ícones
+const ICON_MAP: Record<string, any> = {
+    "Meia Folga": { icon: Calendar, color: "text-blue-500", bg: "bg-blue-100 dark:bg-blue-900/40" },
+    "Almoço Especial": { icon: Pizza, color: "text-orange-500", bg: "bg-orange-100 dark:bg-orange-900/40" },
+    "Café VIP": { icon: Coffee, color: "text-amber-700", bg: "bg-amber-100 dark:bg-amber-900/40" },
+    "default": { icon: Gift, color: "text-emerald-500", bg: "bg-emerald-100 dark:bg-emerald-900/40" }
+};
 
 export default function RewardsPage() {
-    const [xpBalance, setXpBalance] = useState(2510);
+    const [xpBalance, setXpBalance] = useState(0);
+    const [profileId, setProfileId] = useState<string | null>(null);
+    const [storeItems, setStoreItems] = useState<any[]>([]);
     const [spinning, setSpinning] = useState(false);
     const [spinResult, setSpinResult] = useState<string | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [buyingId, setBuyingId] = useState<string | null>(null);
+
+    const supabase = createClient();
+
+    const fetchRewardsData = async () => {
+        setIsLoading(true);
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+
+            // Busca Perfil para XP
+            const { data: prof } = await supabase.from('profiles').select('id, total_xp').eq('id', user.id).single();
+            if (prof) {
+                setProfileId(prof.id);
+                setXpBalance(prof.total_xp || 0);
+            }
+
+            // Busca Itens da Loja
+            const { data: items } = await supabase.from('store_items').select('*').eq('is_active', true);
+            if (items) setStoreItems(items);
+        } catch (e) {
+            console.error("Erro ao carregar loja:", e);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchRewardsData();
+    }, [supabase]);
 
     const handleSpin = () => {
-        if (spinning) return;
+        if (spinning || !profileId) return;
         setSpinning(true);
         setSpinResult(null);
 
         // Simulate spin wheel animation
-        setTimeout(() => {
+        setTimeout(async () => {
             setSpinning(false);
             const rewards = ["+50 XP", "+100 XP", "Badge Sorte 🍀", "Nada desta vez"];
             const prize = rewards[Math.floor(Math.random() * rewards.length)];
             setSpinResult(prize);
+
             if (prize.includes("XP")) {
                 const amount = parseInt(prize.replace(/\D/g, ""), 10);
-                setXpBalance(prev => prev + amount);
+                const newTotal = xpBalance + amount;
+                setXpBalance(newTotal);
+
+                // Update DB
+                await supabase.from('profiles').update({ total_xp: newTotal }).eq('id', profileId);
+                await supabase.from('activity_logs').insert({
+                    user_id: profileId,
+                    action_type: 'spin_wheel',
+                    xp_earned: amount,
+                    description: `Ganhou ${amount} XP na Roleta Diária!`
+                });
             }
         }, 3000);
+    };
+
+    const handleBuy = async (item: any) => {
+        if (!profileId || xpBalance < item.cost_xp) return;
+        if (!confirm(`Deseja resgatar "${item.name}" por ${item.cost_xp} XP?`)) return;
+
+        setBuyingId(item.id);
+        try {
+            const newTotal = xpBalance - item.cost_xp;
+
+            // Subtrai XP do perfil
+            const { error: pError } = await supabase.from('profiles').update({ total_xp: newTotal }).eq('id', profileId);
+            if (pError) throw pError;
+
+            // Log da compra para o gestor saber e auditar
+            await supabase.from('activity_logs').insert({
+                user_id: profileId,
+                action_type: 'store_purchase',
+                xp_earned: -item.cost_xp,
+                description: `Resgatou: ${item.name} (-${item.cost_xp} XP)`
+            });
+
+            setXpBalance(newTotal);
+            alert(`Resgatado com sucesso! Saldo atual: ${newTotal} XP`);
+        } catch (e) {
+            console.error("Erro ao comprar:", e);
+            alert("Erro ao validar resgate.");
+        } finally {
+            setBuyingId(null);
+        }
     };
 
     return (
@@ -60,6 +138,12 @@ export default function RewardsPage() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+                {isLoading && (
+                    <div className="md:col-span-3 text-center p-10 font-bold text-zinc-500 animate-pulse">
+                        Sincronizando prêmios...
+                    </div>
+                )}
 
                 {/* 8. Daily Spin / Roda da Sorte */}
                 <div className="md:col-span-1 bg-gradient-to-br from-indigo-900 to-purple-900 rounded-2xl p-6 text-white relative overflow-hidden shadow-xl shadow-purple-900/20 flex flex-col items-center text-center">
@@ -125,47 +209,50 @@ export default function RewardsPage() {
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {MOCK_REWARDS.map((reward) => {
-                            const Icon = reward.icon;
-                            const canAfford = xpBalance >= reward.xp;
+                        {!isLoading && storeItems.map((reward) => {
+                            const mapData = ICON_MAP[reward.name] || ICON_MAP["default"];
+                            const Icon = mapData.icon;
+                            const canAfford = xpBalance >= reward.cost_xp;
 
                             return (
                                 <div key={reward.id} className="bg-white dark:bg-zinc-950 rounded-2xl border border-zinc-100 dark:border-zinc-900 p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
                                     <div>
                                         <div className="flex items-start justify-between mb-4">
-                                            <div className={cn("w-12 h-12 rounded-xl flex items-center justify-center", reward.bg)}>
-                                                <Icon className={cn("w-6 h-6", reward.color)} />
+                                            <div className={cn("w-12 h-12 rounded-xl flex items-center justify-center", mapData.bg)}>
+                                                <Icon className={cn("w-6 h-6", mapData.color)} />
                                             </div>
-                                            {reward.limit && (
-                                                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-1 rounded-md border border-emerald-200 dark:border-emerald-800">
-                                                    {reward.limit}
-                                                </span>
-                                            )}
+                                            {/* (Optional limit mapping if added DB field later) */}
                                         </div>
-                                        <h3 className="font-bold text-zinc-900 dark:text-zinc-50">{reward.title}</h3>
+                                        <h3 className="font-bold text-zinc-900 dark:text-zinc-50">{reward.name}</h3>
+                                        <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">{reward.description}</p>
                                         <div className="flex items-center gap-1.5 mt-2">
                                             <Zap className={cn("w-4 h-4", canAfford ? "text-amber-500 fill-amber-500" : "text-zinc-400")} />
                                             <span className={cn("font-bold", canAfford ? "text-amber-500" : "text-zinc-500 dark:text-zinc-400")}>
-                                                {reward.xp.toLocaleString()} XP
+                                                {reward.cost_xp.toLocaleString()} XP
                                             </span>
                                         </div>
                                     </div>
 
                                     <button
-                                        disabled={!canAfford}
+                                        onClick={() => handleBuy(reward)}
+                                        disabled={!canAfford || buyingId === reward.id}
                                         className={cn(
                                             "mt-6 w-full py-2.5 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2",
                                             canAfford
                                                 ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 hover:scale-[1.02]"
-                                                : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500 cursor-not-allowed"
+                                                : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500 cursor-not-allowed",
+                                            buyingId === reward.id && "opacity-70 animate-pulse"
                                         )}
                                     >
                                         <Ticket className="w-4 h-4" />
-                                        {canAfford ? "Resgatar Prêmio" : "XP Insuficiente"}
+                                        {buyingId === reward.id ? "Validando..." : canAfford ? "Resgatar Prêmio" : "XP Insuficiente"}
                                     </button>
                                 </div>
                             );
                         })}
+                        {storeItems.length === 0 && !isLoading && (
+                            <div className="col-span-1 border-dashed border-2 rounded-2xl p-6 text-center text-zinc-500 text-sm">Nenhum item disponível na loja atualmente.</div>
+                        )}
                     </div>
 
                     <div className="bg-amber-50 border border-amber-200 dark:bg-amber-950/30 dark:border-amber-900/50 rounded-xl p-4 flex items-start gap-3 mt-4">
