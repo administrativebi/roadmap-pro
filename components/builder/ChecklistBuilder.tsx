@@ -7,7 +7,7 @@ import {
     ChevronDown, ChevronUp, Save, Eye, History,
     Zap, Image as ImageIcon, Weight, Layers,
     FileText, Sparkles, MoreVertical, Check, Loader2,
-    Calendar, Clock, X,
+    X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -17,6 +17,7 @@ import {
 import { QuestionEditor } from "./QuestionEditor";
 import { TemplateManager } from "./TemplateManager";
 import { VersionHistory } from "./VersionHistory";
+import { ScheduleConfigModal, ScheduleBadge, type ScheduleConfig } from "./ScheduleConfig";
 import { createClient } from "@/lib/supabase/client";
 
 function generateId() {
@@ -59,6 +60,7 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
     const [showPreview, setShowPreview] = useState(false);
     const [showVersions, setShowVersions] = useState(false);
     const [showTemplates, setShowTemplates] = useState(false);
+    const [showSchedule, setShowSchedule] = useState(false);
     const [collapsedSections, setCollapsedSections] = useState<string[]>([]);
     const [dragOverSection, setDragOverSection] = useState<string | null>(null);
     const [saved, setSaved] = useState(false);
@@ -66,8 +68,17 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
     const [isLoadingTemplate, setIsLoadingTemplate] = useState(false);
     const [sectors, setSectors] = useState<{ id: string, name: string }[]>([]);
     const [sectorId, setSectorId] = useState<string>("");
-    const [deadlineDate, setDeadlineDate] = useState<string>("");
-    const [deadlineTime, setDeadlineTime] = useState<string>("");
+    const [scheduleConfig, setScheduleConfig] = useState<ScheduleConfig>({
+        enabled: false,
+        recurrence: "none",
+        days_of_week: [],
+        day_of_month: null,
+        start_date: "",
+        end_date: "",
+        deadline_time: "",
+        notify_before_minutes: 60,
+        auto_create: true,
+    });
     const [currentTemplateDbId, setCurrentTemplateDbId] = useState<string | null>(templateId || null);
     const supabase = createClient();
 
@@ -87,8 +98,11 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
             setSections([createDefaultSection(0)]);
             setTemplateName("");
             setSectorId("");
-            setDeadlineDate("");
-            setDeadlineTime("");
+            setScheduleConfig({
+                enabled: false, recurrence: "none", days_of_week: [],
+                day_of_month: null, start_date: "", end_date: "",
+                deadline_time: "", notify_before_minutes: 60, auto_create: true,
+            });
             setCurrentTemplateDbId(null);
             return;
         }
@@ -106,8 +120,18 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
                 if (tData) {
                     setTemplateName(tData.title);
                     setSectorId(tData.sector_id || "");
-                    setDeadlineDate(tData.deadline_date || "");
-                    setDeadlineTime(tData.deadline_time || "");
+                    if (tData.schedule_config) {
+                        setScheduleConfig(tData.schedule_config);
+                    } else if (tData.deadline_date || tData.deadline_time) {
+                        // Migrate old fields
+                        setScheduleConfig(prev => ({
+                            ...prev,
+                            enabled: true,
+                            recurrence: "none",
+                            start_date: tData.deadline_date || "",
+                            deadline_time: tData.deadline_time || "",
+                        }));
+                    }
                     setCurrentTemplateDbId(tData.id);
                 }
 
@@ -261,8 +285,9 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
                         title: templateName,
                         description: "Template editado via construtor",
                         sector_id: sectorId || null,
-                        deadline_date: deadlineDate || null,
-                        deadline_time: deadlineTime || null,
+                        schedule_config: scheduleConfig,
+                        deadline_date: scheduleConfig.start_date || null,
+                        deadline_time: scheduleConfig.deadline_time || null,
                     })
                     .eq("id", savedTemplateId);
 
@@ -289,8 +314,9 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
                         title: templateName,
                         description: "Template gerado via construtor",
                         sector_id: sectorId || null,
-                        deadline_date: deadlineDate || null,
-                        deadline_time: deadlineTime || null,
+                        schedule_config: scheduleConfig,
+                        deadline_date: scheduleConfig.start_date || null,
+                        deadline_time: scheduleConfig.deadline_time || null,
                         version: 1,
                         is_active: true
                     })
@@ -349,7 +375,7 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
             await supabase.from("template_versions").insert({
                 template_id: savedTemplateId,
                 version: templateId ? 2 : 1,
-                snapshot: { templateName, sections, sectorId, deadlineDate, deadlineTime },
+                snapshot: { templateName, sections, sectorId, scheduleConfig },
                 changes: [templateId ? "Template atualizado via construtor" : "Template criado via construtor"],
                 questions_added: diff > 0 ? diff : 0,
                 questions_removed: diff < 0 ? Math.abs(diff) : 0,
@@ -394,8 +420,11 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
         if (snapshot.sections) setSections(snapshot.sections);
         if (snapshot.templateName) setTemplateName(snapshot.templateName);
         if (snapshot.sectorId) setSectorId(snapshot.sectorId);
-        if (snapshot.deadlineDate) setDeadlineDate(snapshot.deadlineDate);
-        if (snapshot.deadlineTime) setDeadlineTime(snapshot.deadlineTime);
+        if (snapshot.scheduleConfig) setScheduleConfig(snapshot.scheduleConfig);
+        // Backward compat
+        if (snapshot.deadlineDate && !snapshot.scheduleConfig) {
+            setScheduleConfig(prev => ({ ...prev, enabled: true, start_date: snapshot.deadlineDate, deadline_time: snapshot.deadlineTime || "" }));
+        }
         setShowVersions(false);
     };
 
@@ -445,29 +474,8 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
                                     </div>
                                 </div>
 
-                                {/* Schedule/Deadline */}
-                                <div className="flex items-center gap-2 flex-wrap">
-                                    <div className="flex items-center gap-1.5 bg-zinc-50 dark:bg-zinc-900 rounded-xl px-3 py-2 border border-zinc-100 dark:border-zinc-800">
-                                        <Calendar className="w-3.5 h-3.5 text-zinc-400" />
-                                        <input
-                                            type="date"
-                                            value={deadlineDate}
-                                            onChange={(e) => setDeadlineDate(e.target.value)}
-                                            className="text-xs bg-transparent border-none focus:outline-none text-zinc-600 dark:text-zinc-300"
-                                            title="Data limite"
-                                        />
-                                    </div>
-                                    <div className="flex items-center gap-1.5 bg-zinc-50 dark:bg-zinc-900 rounded-xl px-3 py-2 border border-zinc-100 dark:border-zinc-800">
-                                        <Clock className="w-3.5 h-3.5 text-zinc-400" />
-                                        <input
-                                            type="time"
-                                            value={deadlineTime}
-                                            onChange={(e) => setDeadlineTime(e.target.value)}
-                                            className="text-xs bg-transparent border-none focus:outline-none text-zinc-600 dark:text-zinc-300"
-                                            title="Horário limite"
-                                        />
-                                    </div>
-                                </div>
+                                {/* Schedule Badge */}
+                                <ScheduleBadge config={scheduleConfig} onClick={() => setShowSchedule(true)} />
 
                                 {/* Action Buttons */}
                                 <div className="flex items-center gap-2 flex-wrap">
@@ -521,11 +529,11 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
                                             <p className="text-sm text-zinc-500 mb-1">
                                                 {totalQuestions} perguntas • {sections.length} seções
                                             </p>
-                                            {(deadlineDate || deadlineTime) && (
+                                            {scheduleConfig.enabled && (
                                                 <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                                                    <Calendar className="w-3 h-3" />
-                                                    Prazo: {deadlineDate && new Date(deadlineDate + "T00:00").toLocaleDateString("pt-BR")}
-                                                    {deadlineTime && ` às ${deadlineTime}`}
+                                                    📅 {scheduleConfig.recurrence !== "none" ? `Recorrência: ${scheduleConfig.recurrence}` : "Agendado"}
+                                                    {scheduleConfig.start_date && ` • ${new Date(scheduleConfig.start_date + "T00:00").toLocaleDateString("pt-BR")}`}
+                                                    {scheduleConfig.deadline_time && ` às ${scheduleConfig.deadline_time}`}
                                                 </p>
                                             )}
                                         </div>
@@ -799,6 +807,13 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
                     <TemplateManager
                         onClose={() => setShowTemplates(false)}
                         onLoad={handleLoadTemplate}
+                    />
+                )}
+                {showSchedule && (
+                    <ScheduleConfigModal
+                        config={scheduleConfig}
+                        onChange={setScheduleConfig}
+                        onClose={() => setShowSchedule(false)}
                     />
                 )}
             </AnimatePresence>

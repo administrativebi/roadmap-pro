@@ -18,13 +18,38 @@ interface Template {
     estimated_minutes: number;
 }
 
+interface ParsedSection {
+    id: string;
+    title: string;
+    icon?: string;
+    color?: string;
+    order: number;
+}
+
 interface Question {
     id: string;
     title: string;
     type: string;
-    section: string;
+    section: string; // raw JSON string
+    parsedSection: ParsedSection;
     is_required: boolean;
     weight: number;
+}
+
+function parseSectionField(raw: string): ParsedSection {
+    try {
+        const parsed = JSON.parse(raw);
+        return {
+            id: parsed.id || "unknown",
+            title: parsed.title || "Seção",
+            icon: parsed.icon,
+            color: parsed.color,
+            order: parsed.order ?? 0,
+        };
+    } catch {
+        // fallback: treat as plain string section name
+        return { id: raw, title: raw, order: 0 };
+    }
 }
 
 export default function ChecklistExecutionPage() {
@@ -36,6 +61,7 @@ export default function ChecklistExecutionPage() {
     const [template, setTemplate] = useState<Template | null>(null);
     const [questions, setQuestions] = useState<Question[]>([]);
     const [executionId, setExecutionId] = useState<string | null>(null);
+    const [userId, setUserId] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [answers, setAnswers] = useState<Record<string, { value: string; comment: string; has_issue: boolean }>>({});
@@ -54,6 +80,7 @@ export default function ChecklistExecutionPage() {
         try {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) throw new Error("Usuário não autenticado");
+            setUserId(user.id);
 
             // Fetch template
             const { data: tplData, error: tplError } = await supabase
@@ -73,11 +100,16 @@ export default function ChecklistExecutionPage() {
                 .order('order_index');
 
             if (qError) throw qError;
-            setQuestions(qData || []);
 
-            // Check if there's an in_progress execution for this user and template today
-            // Or start a new one directly
-            const { data: existingExecution, error: exError } = await supabase
+            // Parse section JSON for each question
+            const parsedQuestions: Question[] = (qData || []).map((q: any) => ({
+                ...q,
+                parsedSection: parseSectionField(q.section),
+            }));
+            setQuestions(parsedQuestions);
+
+            // Check if there's an in_progress execution for this user and template
+            const { data: existingExecution } = await supabase
                 .from('checklists')
                 .select('*')
                 .eq('template_id', templateId)
@@ -85,7 +117,7 @@ export default function ChecklistExecutionPage() {
                 .eq('status', 'in_progress')
                 .order('started_at', { ascending: false })
                 .limit(1)
-                .single();
+                .maybeSingle();
 
             if (existingExecution) {
                 setExecutionId(existingExecution.id);
@@ -97,7 +129,7 @@ export default function ChecklistExecutionPage() {
 
                 if (existingAnswers) {
                     const loadedAnswers: any = {};
-                    existingAnswers.forEach(ans => {
+                    existingAnswers.forEach((ans: any) => {
                         loadedAnswers[ans.question_id] = {
                             value: ans.answer_value || "",
                             comment: ans.comment || "",
@@ -138,7 +170,8 @@ export default function ChecklistExecutionPage() {
             [questionId]: {
                 ...prev[questionId],
                 value,
-                has_issue
+                has_issue,
+                comment: prev[questionId]?.comment || "",
             }
         }));
     };
@@ -155,10 +188,17 @@ export default function ChecklistExecutionPage() {
         }));
     };
 
-    const sections = Array.from(new Set(questions.map(q => q.section))).filter(Boolean);
+    // Build unique ordered sections from parsed section data
+    const sectionMap = new Map<string, ParsedSection>();
+    questions.forEach(q => {
+        if (!sectionMap.has(q.parsedSection.id)) {
+            sectionMap.set(q.parsedSection.id, q.parsedSection);
+        }
+    });
+    const sections = Array.from(sectionMap.values()).sort((a, b) => a.order - b.order);
 
     const handleFinish = async () => {
-        if (!executionId) return;
+        if (!executionId || !userId) return;
 
         // Verifica se todas obrigatórias foram respondidas
         const missingRequired = questions.filter(q => q.is_required && !answers[q.id]?.value);
@@ -178,24 +218,36 @@ export default function ChecklistExecutionPage() {
                 has_issue: answers[qId].has_issue
             }));
 
-            // Apaga as atuais para inserir as novas ou dar upsert (como o Supabase não retorna um ID para update em batch fácil sem a PK do mapping, excluímos)
-            await supabase.from('checklist_responses').delete().eq('checklist_id', executionId);
+            // Delete existing responses to re-insert
+            const { error: delError } = await supabase
+                .from('checklist_responses')
+                .delete()
+                .eq('checklist_id', executionId);
+
+            if (delError) {
+                console.error("Erro ao limpar respostas:", delError);
+                throw new Error(`Erro ao limpar respostas: ${delError.message}`);
+            }
 
             if (responsesArray.length > 0) {
                 const { data: insertedResponses, error: insError } = await supabase
                     .from('checklist_responses')
                     .insert(responsesArray)
                     .select();
-                if (insError) throw insError;
+
+                if (insError) {
+                    console.error("Erro ao inserir respostas:", insError);
+                    throw new Error(`Erro ao inserir respostas: ${insError.message}`);
+                }
 
                 // Cria Planos de Ação se tem itens marcados com problema
-                const issues = insertedResponses?.filter(r => r.has_issue) || [];
+                const issues = insertedResponses?.filter((r: any) => r.has_issue) || [];
                 if (issues.length > 0) {
-                    const actionPlans = issues.map(issue => {
+                    const actionPlans = issues.map((issue: any) => {
                         const qInfo = questions.find(q => q.id === issue.question_id);
                         return {
                             checklist_response_id: issue.id,
-                            assignee_id: user?.id,
+                            assignee_id: userId,
                             title: `Não Conformidade: ${qInfo?.title}`,
                             description: issue.comment || 'Item marcado como não conforme durante inspeção.',
                             priority: 'High',
@@ -203,7 +255,10 @@ export default function ChecklistExecutionPage() {
                         };
                     });
 
-                    await supabase.from('action_plans').insert(actionPlans);
+                    const { error: apError } = await supabase.from('action_plans').insert(actionPlans);
+                    if (apError) {
+                        console.warn("Aviso: erro ao criar planos de ação:", apError);
+                    }
                 }
             }
 
@@ -231,23 +286,27 @@ export default function ChecklistExecutionPage() {
                 })
                 .eq('id', executionId);
 
-            if (updError) throw updError;
+            if (updError) {
+                console.error("Erro ao finalizar checklist:", updError);
+                throw new Error(`Erro ao finalizar: ${updError.message}`);
+            }
 
-            // Gera logs de atividade e gamificação
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-                await supabase.from('activity_logs').insert({
-                    user_id: user.id,
-                    action_type: 'checklist_completed',
-                    description: `Completou o checklist ${template?.title} com score de ${Math.round(score)}%`
-                });
+            // Gera log de atividade
+            const { error: logError } = await supabase.from('activity_logs').insert({
+                user_id: userId,
+                action_type: 'checklist_completed',
+                description: `Completou o checklist ${template?.title} com score de ${Math.round(score)}%`
+            });
+
+            if (logError) {
+                console.warn("Aviso: erro ao criar log de atividade:", logError);
             }
 
             alert("Checklist concluído com sucesso!");
             router.push('/checklists');
-        } catch (err) {
+        } catch (err: any) {
             console.error("Erro ao finalizar:", err);
-            alert("Erro ao salvar o checklist. Tente novamente.");
+            alert(`Erro ao salvar o checklist: ${err.message || "Erro desconhecido. Tente novamente."}`);
         } finally {
             setIsSaving(false);
         }
@@ -270,10 +329,14 @@ export default function ChecklistExecutionPage() {
         );
     }
 
-    const currentSectionName = currentStep === 0 ? "Introdução" : sections[currentStep - 1] || "Perguntas";
-    const currentQuestions = currentStep === 0 ? [] : questions.filter(q => q.section === currentSectionName);
+    const currentSection = currentStep === 0 ? null : sections[currentStep - 1];
+    const currentSectionTitle = currentSection?.title || "Perguntas";
+    const currentSectionIcon = currentSection?.icon || "";
+    const currentSectionColor = currentSection?.color || "#6366f1";
+    const currentQuestions = currentStep === 0 ? [] : questions.filter(q => q.parsedSection.id === currentSection?.id);
 
-    const progressPercentage = (Object.keys(answers).length / questions.length) * 100 || 0;
+    const answeredCount = Object.keys(answers).filter(k => answers[k]?.value).length;
+    const progressPercentage = questions.length > 0 ? (answeredCount / questions.length) * 100 : 0;
 
     return (
         <div className="max-w-3xl mx-auto p-4 md:p-8 relative min-h-[85vh] flex flex-col">
@@ -329,7 +392,7 @@ export default function ChecklistExecutionPage() {
                             </div>
                             <div>
                                 <p className="text-xs uppercase tracking-widest text-zinc-500 font-bold mb-1">Tempo Est.</p>
-                                <p className="font-semibold">{template.estimated_minutes} min</p>
+                                <p className="font-semibold">{template.estimated_minutes || Math.ceil(questions.length * 0.5)} min</p>
                             </div>
                         </div>
 
@@ -349,10 +412,13 @@ export default function ChecklistExecutionPage() {
                         className="flex-1 flex flex-col"
                     >
                         <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-50 mb-6 flex items-center gap-2">
-                            <span className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-sm">
-                                {currentStep}
+                            <span
+                                className="w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0"
+                                style={{ backgroundColor: currentSectionColor + '20', color: currentSectionColor }}
+                            >
+                                {currentSectionIcon || currentStep}
                             </span>
-                            {currentSectionName}
+                            {currentSectionTitle}
                         </h2>
 
                         <div className="space-y-6 pb-24">
@@ -396,6 +462,54 @@ export default function ChecklistExecutionPage() {
                                                 placeholder="Digite sua resposta..."
                                                 rows={3}
                                             />
+                                        )}
+
+                                        {q.type === 'number' && (
+                                            <input
+                                                type="number"
+                                                value={ans?.value || ""}
+                                                onChange={(e) => handleAnswer(q.id, e.target.value)}
+                                                className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-3"
+                                                placeholder="Digite o valor..."
+                                            />
+                                        )}
+
+                                        {q.type === 'rating' && (
+                                            <div className="flex gap-2 mb-3">
+                                                {[1, 2, 3, 4, 5].map(star => (
+                                                    <button
+                                                        key={star}
+                                                        onClick={() => handleAnswer(q.id, String(star))}
+                                                        className={cn(
+                                                            "w-12 h-12 rounded-xl border text-lg font-bold transition-all",
+                                                            Number(ans?.value) >= star
+                                                                ? "bg-amber-400 border-amber-400 text-white shadow-md"
+                                                                : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
+                                                        )}
+                                                    >
+                                                        ⭐
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {q.type === 'multiple_choice' && (
+                                            <div className="grid grid-cols-2 gap-2 mb-3">
+                                                {["Opção A", "Opção B", "Opção C", "Opção D"].map(opt => (
+                                                    <button
+                                                        key={opt}
+                                                        onClick={() => handleAnswer(q.id, opt)}
+                                                        className={cn(
+                                                            "py-3 px-4 rounded-xl border text-sm font-medium transition-all text-left",
+                                                            ans?.value === opt
+                                                                ? "bg-indigo-500 border-indigo-500 text-white shadow-md"
+                                                                : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
+                                                        )}
+                                                    >
+                                                        {opt}
+                                                    </button>
+                                                ))}
+                                            </div>
                                         )}
 
                                         {ans?.value === 'no' && (
