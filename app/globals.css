@@ -111,6 +111,71 @@ body {
   padding: 0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Mobile: prevent rubber banding, improve touch feel */
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: contain;
+}
+
+/* ===== MOBILE SAFE AREAS (iPhone notch, Android gesture bar) ===== */
+.safe-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* ===== MOBILE TOUCH IMPROVEMENTS ===== */
+@media (max-width: 1023px) {
+
+  /* Larger touch targets on mobile */
+  button,
+  a,
+  [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Prevent text selection on interactive elements */
+  button,
+  [role="button"] {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  /* Smooth momentum scrolling */
+  .overflow-y-auto,
+  .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Cards: slightly larger text on mobile for readability */
+  .text-xs {
+    font-size: 0.8rem;
+  }
+
+  /* Fix fixed elements on iOS with virtual keyboard */
+  input:focus,
+  textarea:focus,
+  select:focus {
+    font-size: 16px;
+    /* Prevents iOS auto-zoom on input focus */
+  }
+}
+
+/* ===== MOBILE CARD STYLES ===== */
+@media (max-width: 1023px) {
+
+  /* Make cards more touch-friendly */
+  .rounded-2xl {
+    border-radius: 16px;
+  }
+
+  /* Full width select elements on mobile */
+  select {
+    width: 100%;
+  }
 }
 
 /* Remover barra de rolagem para melhorar experiência PWA  */

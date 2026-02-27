@@ -2,6 +2,7 @@
 
 import { ReactNode } from "react";
 import { Sidebar } from "@/components/shared/Sidebar";
+import { MobileNav } from "@/components/shared/MobileNav";
 import { useFocusMode } from "@/components/providers/focus-mode-provider";
 import { OnboardingTour } from "@/components/features/OnboardingTour";
 import { motion, AnimatePresence } from "framer-motion";
@@ -13,7 +14,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
     return (
         <div className="flex min-h-screen bg-[var(--bg-color)] dark:bg-zinc-950">
-            {/* Sidebar — esconde no Focus Mode */}
+            {/* Desktop Sidebar — hidden on mobile, hidden on Focus Mode */}
             <AnimatePresence>
                 {!isFocused && (
                     <motion.div
@@ -21,15 +22,24 @@ export function AppShell({ children }: { children: ReactNode }) {
                         animate={{ x: 0, opacity: 1 }}
                         exit={{ x: -260, opacity: 0 }}
                         transition={{ type: "spring", damping: 25, stiffness: 300 }}
+                        className="hidden lg:block"
                     >
                         <Sidebar />
                     </motion.div>
                 )}
             </AnimatePresence>
 
+            {/* Mobile Navigation — header + bottom bar + drawer */}
+            <MobileNav />
+
             <main className={cn(
-                "flex-1 p-8 transition-all duration-300",
-                isFocused ? "ml-0" : "ml-64"
+                "flex-1 transition-all duration-300",
+                // Desktop: ml-64, paddings normais 
+                "lg:p-8",
+                isFocused ? "lg:ml-0" : "lg:ml-64",
+                // Mobile: sem margin-left, padding menor, com espaço pro header (pt) e bottom bar (pb)
+                "p-4 pt-[72px] pb-[88px]",
+                "lg:pt-8 lg:pb-8"
             )}>
                 {/* Focus Mode indicator */}
                 <AnimatePresence>
