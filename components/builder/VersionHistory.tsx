@@ -44,9 +44,13 @@ export function VersionHistory({ templateId, onClose, onRestore }: VersionHistor
             try {
                 const { data, error } = await supabase
                     .from("template_versions")
-                    .select("*, profiles:author_id(name)")
+                    .select("*")
                     .eq("template_id", templateId)
                     .order("created_at", { ascending: false });
+
+                if (error) {
+                    console.error("Erro na query de versões:", error);
+                }
 
                 if (data && data.length > 0) {
                     setVersions(data.map((v: any, i: number) => ({
@@ -56,7 +60,7 @@ export function VersionHistory({ templateId, onClose, onRestore }: VersionHistor
                             day: "2-digit", month: "2-digit", year: "numeric",
                             hour: "2-digit", minute: "2-digit"
                         }),
-                        author: v.profiles?.name || "Sistema",
+                        author: "Sistema",
                         changes: v.changes || [],
                         questionsAdded: v.questions_added || 0,
                         questionsRemoved: v.questions_removed || 0,
