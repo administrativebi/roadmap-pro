@@ -9,6 +9,7 @@ interface ActionPlanFormProps {
     onClose: () => void;
     onSuccess: () => void;
     checklistResponseId?: string; // Opcional, usado quando gerado dentro de um checklist
+    initialTitle?: string;
 }
 
 interface UserProfile {
@@ -23,14 +24,14 @@ interface SectorInfo {
     notion_page_id?: string;
 }
 
-export function ActionPlanForm({ onClose, onSuccess, checklistResponseId }: ActionPlanFormProps) {
+export function ActionPlanForm({ onClose, onSuccess, checklistResponseId, initialTitle }: ActionPlanFormProps) {
     const [isLoading, setIsLoading] = useState(false);
     const [profiles, setProfiles] = useState<UserProfile[]>([]);
     const [sectors, setSectors] = useState<SectorInfo[]>([]);
     const supabase = createClient();
 
     const [formData, setFormData] = useState({
-        title: "",
+        title: initialTitle || "",
         benefit: "",
         step_by_step: "",
         assignee_id: "",
@@ -89,8 +90,10 @@ export function ActionPlanForm({ onClose, onSuccess, checklistResponseId }: Acti
                         step_by_step: formData.step_by_step,
                         cost_type: formData.cost_type,
                         due_date: formData.due_date ? new Date(formData.due_date).toISOString() : null,
-                        assignee_notion_id: profiles.find(p => p.id === formData.assignee_id)?.notion_page_id,
-                        sector_notion_id: sectors.find(s => s.id === formData.sector_id)?.notion_page_id,
+                        assignee_notion_id: profiles.find(p => p.id === formData.assignee_id)?.notion_page_id || null,
+                        sector_notion_id: sectors.find(s => s.id === formData.sector_id)?.notion_page_id || null,
+                        assignee_id: formData.assignee_id || null,
+                        sector_id: formData.sector_id || null,
                         checklist_response_id: checklistResponseId
                     }
                 })

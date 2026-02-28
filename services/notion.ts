@@ -150,6 +150,28 @@ export async function updateActionPlanXPInNotion(pageId: string, xp: number) {
 }
 
 /**
+ * Atualiza o status de um Plano de Ação no Notion
+ */
+export async function updateActionPlanStatusInNotion(pageId: string, statusRaw: "pending" | "in_progress" | "resolved" | "canceled") {
+    if (!process.env.NOTION_API_KEY) return null;
+    const notion = getNotionClient();
+    
+    let notionStatus = "Pendente";
+    if (statusRaw === "in_progress") notionStatus = "Em andamento";
+    if (statusRaw === "resolved") notionStatus = "Resolvido";
+    if (statusRaw === "canceled") notionStatus = "Cancelado";
+
+    return await notion.pages.update({
+        page_id: pageId,
+        properties: {
+            "Status": {
+                select: { name: notionStatus }
+            }
+        }
+    });
+}
+
+/**
  * Cria um Plano de Ação diretamente no Notion a partir do App
  */
 export async function createActionPlanInNotion(planData: Record<string, unknown>) {

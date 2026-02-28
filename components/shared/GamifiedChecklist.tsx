@@ -40,6 +40,7 @@ export function GamifiedChecklist({ template, onComplete }: GamifiedChecklistPro
     const [hadInactivity, setHadInactivity] = useState(false);
     
     const [showActionPlanForm, setShowActionPlanForm] = useState(false);
+    const [nonConformitiesQueue, setNonConformitiesQueue] = useState<ChecklistQuestion[]>([]);
 
     const questions = template.questions;
     const totalQuestions = questions.length;
@@ -99,7 +100,20 @@ export function GamifiedChecklist({ template, onComplete }: GamifiedChecklistPro
     };
 
     const handleRequestFinish = () => {
-        setShowSignature(true);
+        // Encontrar não-conformidades (respostas negativas em sim/não)
+        const nonConformities = questions.filter(q => {
+            const resp = responses[q.id];
+            if (!resp) return false;
+            // Considerando "Não" como false no yes_no como não-conformidade padrão
+            if (q.type === 'yes_no' && resp.value === false) return true;
+            return false;
+        });
+
+        if (nonConformities.length > 0) {
+            setNonConformitiesQueue(nonConformities);
+        } else {
+            setShowSignature(true);
+        }
     };
 
     const handleFinish = (signature?: string) => {
@@ -370,11 +384,22 @@ export function GamifiedChecklist({ template, onComplete }: GamifiedChecklistPro
                 )}
             </div>
 
-            {/* Modal de Plano de Ação */}
-            {showActionPlanForm && (
+            {/* Modal de Plano de Ação Múltiplo (Fila de Não Conformidades) */}
+            {nonConformitiesQueue.length > 0 && (
                 <ActionPlanForm
-                    onClose={() => setShowActionPlanForm(false)}
-                    onSuccess={() => setShowActionPlanForm(false)}
+                    initialTitle={`[Não Conformidade] ${nonConformitiesQueue[0].text}`}
+                    onClose={() => {
+                        // Se cancelar, pula para a próxima
+                        const nextQueue = nonConformitiesQueue.slice(1);
+                        setNonConformitiesQueue(nextQueue);
+                        if (nextQueue.length === 0) setShowSignature(true);
+                    }}
+                    onSuccess={() => {
+                        // Se salvar, pula para a próxima
+                        const nextQueue = nonConformitiesQueue.slice(1);
+                        setNonConformitiesQueue(nextQueue);
+                        if (nextQueue.length === 0) setShowSignature(true);
+                    }}
                 />
             )}
         </div>

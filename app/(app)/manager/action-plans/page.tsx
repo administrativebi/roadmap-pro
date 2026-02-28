@@ -14,7 +14,7 @@ interface ActionPlan {
     resolved_at: string;
     awarded_xp: number | null;
     notion_page_id: string;
-    assignee: { name: string };
+    profiles?: { name: string } | null;
 }
 
 export default function AssignXPPage() {
@@ -28,7 +28,7 @@ export default function AssignXPPage() {
         async function fetchPlans() {
             const { data, error } = await supabase
                 .from('action_plans')
-                .select('*, assignee:profiles(name)')
+                .select('*, profiles!action_plans_assignee_id_fkey(name)')
                 .eq('status', 'resolved')
                 .is('awarded_xp', null)
                 .order('resolved_at', { ascending: false });
@@ -95,7 +95,7 @@ export default function AssignXPPage() {
                                 <p className="text-sm text-zinc-500 mt-1">{plan.description}</p>
                                 <div className="flex items-center gap-4 mt-3">
                                     <span className="text-xs bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-300 px-3 py-1 rounded-full font-semibold">
-                                        👨‍🍳 {plan.assignee?.name || 'Sem responsável'}
+                                        👨‍🍳 {plan.profiles?.name || 'Sem responsável'}
                                     </span>
                                     <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">
                                         Resolvido em {new Date(plan.resolved_at).toLocaleDateString("pt-BR")}

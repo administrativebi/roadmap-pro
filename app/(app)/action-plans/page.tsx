@@ -13,6 +13,7 @@ import {
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { syncActionPlansFromNotionAction } from "@/app/actions/notion-sync";
+import { updateActionPlanStatusAction } from "@/app/actions/update-status";
 import { ActionPlanForm } from "@/components/features/ActionPlanForm";
 
 type PlanStatus = "pending" | "in_progress" | "resolved" | "canceled";
@@ -30,6 +31,7 @@ interface ActionPlan {
     priority?: string;
     created_at: string;
     ai_suggestion?: string;
+    notion_page_id?: string;
 }
 
 const statusConfig: Record<PlanStatus, { label: string; icon: typeof Clock; color: string; bg: string }> = {
@@ -96,17 +98,11 @@ export default function ActionPlansPage() {
         setAiLoading(null);
     };
 
-    const updateStatus = async (planId: string, newStatus: PlanStatus) => {
+    const updateStatus = async (planId: string, newStatus: PlanStatus, notionPageId?: string) => {
         try {
-            const { error } = await supabase
-                .from('action_plans')
-                .update({
-                    status: newStatus,
-                    resolved_at: newStatus === 'resolved' ? new Date().toISOString() : null
-                })
-                .eq('id', planId);
-
-            if (error) throw error;
+            const result = await updateActionPlanStatusAction(planId, newStatus, notionPageId);
+            if (result.error) throw new Error(result.error);
+            
             setPlans(prev => prev.map(p => p.id === planId ? { ...p, status: newStatus } : p));
         } catch (err) {
             console.error("Erro ao atualizar status:", err);
@@ -290,7 +286,7 @@ export default function ActionPlansPage() {
                                                     <div className="flex gap-2">
                                                         {plan.status !== 'resolved' && plan.status !== 'canceled' && (
                                                             <button
-                                                                onClick={() => updateStatus(plan.id, 'resolved')}
+                                                                onClick={() => updateStatus(plan.id, 'resolved', plan.notion_page_id)}
                                                                 className="px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-black uppercase hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-500/20"
                                                             >
                                                                 Resolver
@@ -298,7 +294,7 @@ export default function ActionPlansPage() {
                                                         )}
                                                         {plan.status === 'pending' && (
                                                             <button
-                                                                onClick={() => updateStatus(plan.id, 'in_progress')}
+                                                                onClick={() => updateStatus(plan.id, 'in_progress', plan.notion_page_id)}
                                                                 className="px-4 py-2 bg-blue-500 text-white rounded-xl text-xs font-black uppercase hover:bg-blue-600 transition-colors shadow-lg shadow-blue-500/20"
                                                             >
                                                                 Iniciar
