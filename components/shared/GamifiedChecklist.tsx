@@ -99,27 +99,41 @@ export function GamifiedChecklist({ template, onComplete }: GamifiedChecklistPro
     };
 
     const handleRequestFinish = () => {
-        // Encontrar não-conformidades (respostas que acionam a regra 'create_action_plan')
         const nonConformities: ChecklistQuestion[] = [];
 
         questions.forEach(q => {
             const resp = responses[q.id];
-            if (!resp || !q.conditional_rules) return;
+            if (!resp) return;
 
-            q.conditional_rules.forEach((rule: any) => {
-                if (rule.action === 'create_action_plan') {
-                    let matches = false;
-                    const valStr = String(resp.value).toLowerCase();
-                    const triggerStr = String(rule.compareValue || rule.triggerAnswer).toLowerCase();
+            let isNonConformity = false;
 
-                    if (rule.operator === 'equals' && valStr === triggerStr) matches = true;
-                    if (rule.operator === 'not_equals' && valStr !== triggerStr) matches = true;
+            // 1. Checa se tem regra explícita de "Plano de Ação" e se a resposta a ativou
+            if (q.conditional_rules && q.conditional_rules.length > 0) {
+                q.conditional_rules.forEach((rule: any) => {
+                    if (rule.action === 'create_action_plan') {
+                        const valStr = String(resp.value).toLowerCase();
+                        // Suporta diferentes formas de salvar a condição dependendo da versão do app
+                        const triggerValue = rule.triggerAnswer !== undefined ? rule.triggerAnswer : rule.compareValue;
+                        const triggerStr = String(triggerValue).toLowerCase();
+                        
+                        // Default to equals if operator is missing
+                        const operator = rule.operator || 'equals';
 
-                    if (matches) {
-                        nonConformities.push(q);
+                        if (operator === 'equals' && valStr === triggerStr) isNonConformity = true;
+                        if (operator === 'not_equals' && valStr !== triggerStr) isNonConformity = true;
                     }
+                });
+            } else {
+                // Se não tem regra configurada no banco, mas a pergunta for de sim/não e a pessoa disser NÃO (false), 
+                // é o padrão universal de não conformidade para um checklist.
+                if (q.type === 'yes_no' && String(resp.value) === 'false') {
+                    isNonConformity = true;
                 }
-            });
+            }
+
+            if (isNonConformity) {
+                nonConformities.push(q);
+            }
         });
 
         if (nonConformities.length > 0) {
@@ -392,15 +406,14 @@ export function GamifiedChecklist({ template, onComplete }: GamifiedChecklistPro
             {/* Modal de Plano de Ação Múltiplo (Fila de Não Conformidades) */}
             {nonConformitiesQueue.length > 0 && (
                 <ActionPlanForm
-                    initialTitle={`[Não Conformidade] ${nonConformitiesQueue[0].text}`}
+                    initialTitle={`[Ação Necessária] Problema com: ${nonConformitiesQueue[0].text}`}
+                    checklistResponseId={template.id} // Passando o ID temporário do template como vinculo do checklist originador
                     onClose={() => {
-                        // Se cancelar, pula para a próxima
                         const nextQueue = nonConformitiesQueue.slice(1);
                         setNonConformitiesQueue(nextQueue);
                         if (nextQueue.length === 0) setShowSignature(true);
                     }}
                     onSuccess={() => {
-                        // Se salvar, pula para a próxima
                         const nextQueue = nonConformitiesQueue.slice(1);
                         setNonConformitiesQueue(nextQueue);
                         if (nextQueue.length === 0) setShowSignature(true);
