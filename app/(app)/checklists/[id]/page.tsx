@@ -754,10 +754,9 @@ export default function ChecklistExecutionPage() {
                                                     })}
                                                 </div>
                                             )}
-
-                                            <div className="flex gap-3 mt-4">
+                                            <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800/80 w-full">
                                                 {/* Upload Foto */}
-                                                <div className="flex-1 relative">
+                                                <div className="relative">
                                                     <input
                                                         type="file"
                                                         accept="image/*"
@@ -772,30 +771,27 @@ export default function ChecklistExecutionPage() {
                                                     <label
                                                         htmlFor={`cam-${q.id}`}
                                                         className={cn(
-                                                            "w-full py-3 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-1 cursor-pointer transition-all active:scale-[0.98]",
+                                                            "px-3 py-1.5 rounded-full border flex items-center gap-1.5 cursor-pointer transition-all hover:scale-105 active:scale-95 text-xs font-bold",
                                                             ans?.photo_url
-                                                                ? "bg-emerald-50 dark:bg-emerald-900/10 border-emerald-200 dark:border-emerald-800"
-                                                                : conditionalPhotoRequired && !(ans?.photo_url) ? "bg-orange-50 border-orange-200 dark:bg-orange-900/20 dark:border-orange-800/50" : "bg-zinc-50 dark:bg-zinc-800/50 border-zinc-200 dark:border-zinc-800"
+                                                                ? "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400"
+                                                                : conditionalPhotoRequired && !(ans?.photo_url) ? "bg-orange-50 dark:bg-orange-950/30 border-orange-300 dark:border-orange-800 text-orange-600 dark:text-orange-500 shadow-sm"
+                                                                    : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
                                                         )}
                                                     >
                                                         {ans?.photo_url ? (
                                                             <>
-                                                                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                                                                <span className="text-[10px] text-emerald-600 font-black tracking-widest uppercase mt-1">FOTO OK</span>
+                                                                <CheckCircle2 className="w-3.5 h-3.5" /> FOTO
                                                             </>
                                                         ) : (
                                                             <>
-                                                                <Camera className={cn("w-5 h-5 transition-colors", conditionalPhotoRequired ? "text-orange-500" : "text-zinc-400 group-hover:text-amber-500")} />
-                                                                <span className={cn("text-[9px] font-black uppercase tracking-widest text-center", conditionalPhotoRequired ? "text-orange-600 font-bold" : "text-zinc-500")}>
-                                                                    IMAGEM {conditionalPhotoRequired && <span className="text-orange-600 text-[12px]">*</span>}
-                                                                </span>
+                                                                <Camera className="w-3.5 h-3.5" /> FOTO {conditionalPhotoRequired && "*"}
                                                             </>
                                                         )}
                                                     </label>
                                                 </div>
 
                                                 {/* Upload Anexo */}
-                                                <div className="flex-1 relative">
+                                                <div className="relative">
                                                     <input
                                                         type="file"
                                                         className="hidden"
@@ -808,23 +804,19 @@ export default function ChecklistExecutionPage() {
                                                     <label
                                                         htmlFor={`attach-${q.id}`}
                                                         className={cn(
-                                                            "w-full py-3 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-1 cursor-pointer transition-all active:scale-[0.98]",
+                                                            "px-3 py-1.5 rounded-full border flex items-center gap-1.5 cursor-pointer transition-all hover:scale-105 active:scale-95 text-xs font-bold",
                                                             ans?.attachment_url
-                                                                ? "bg-indigo-50 dark:bg-indigo-900/10 border-indigo-200 dark:border-indigo-800"
-                                                                : "bg-zinc-50 dark:bg-zinc-800/50 border-zinc-200 dark:border-zinc-800"
+                                                                ? "bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400"
+                                                                : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
                                                         )}
                                                     >
                                                         {ans?.attachment_url ? (
                                                             <>
-                                                                <CheckCircle2 className="w-5 h-5 text-indigo-600" />
-                                                                <span className="text-[10px] text-indigo-600 font-black tracking-widest uppercase mt-1">ANEXO OK</span>
+                                                                <CheckCircle2 className="w-3.5 h-3.5" /> ANEXO
                                                             </>
                                                         ) : (
                                                             <>
-                                                                <Paperclip className="w-5 h-5 text-zinc-400 transition-colors" />
-                                                                <span className="text-[9px] font-black uppercase tracking-widest text-center text-zinc-500">
-                                                                    ANEXAR PDF/DOC
-                                                                </span>
+                                                                <Paperclip className="w-3.5 h-3.5" /> ANEXO
                                                             </>
                                                         )}
                                                     </label>

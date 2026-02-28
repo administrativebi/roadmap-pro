@@ -47,13 +47,16 @@ function ChecklistsList() {
                 // Carregar checklists em andamento hoje (limitado à data atual)
                 const { data: { user } } = await supabase.auth.getUser();
                 if (user) {
-                    const todayStr = new Date().toISOString().split('T')[0];
+                    const startOfDay = new Date();
+                    startOfDay.setHours(0, 0, 0, 0);
+                    const todayStr = startOfDay.toISOString();
+
                     const { data: inProg } = await supabase
                         .from('checklists')
                         .select('id, template_id, started_at, template:checklist_templates(title, icon)')
                         .eq('status', 'in_progress')
                         .eq('user_id', user.id)
-                        .gte('started_at', `${todayStr}T00:00:00.000Z`)
+                        .gte('started_at', todayStr)
                         .order('started_at', { ascending: false });
 
                     if (inProg) {
@@ -258,7 +261,9 @@ function ChecklistsList() {
                                         {inProgressChecklists.map((exc) => (
                                             <motion.div
                                                 key={exc.id}
-                                                variants={cardVariants}
+                                                initial={{ opacity: 0, y: 15 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                transition={{ delay: 0.05 }}
                                                 whileHover={{ y: -6, scale: 1.02 }}
                                                 whileTap={{ scale: 0.97 }}
                                                 onClick={() => router.push(`/checklists/${exc.template_id}`)}
@@ -310,7 +315,9 @@ function ChecklistsList() {
                                                 return (
                                                     <motion.div
                                                         key={tpl.id}
-                                                        variants={cardVariants}
+                                                        initial={{ opacity: 0, y: 15 }}
+                                                        animate={{ opacity: 1, y: 0 }}
+                                                        transition={{ delay: 0.05 }}
                                                         whileHover={{ y: -6, scale: 1.02 }}
                                                         whileTap={{ scale: 0.97 }}
                                                         onClick={() => router.push(`/checklists/${tpl.id}`)}
