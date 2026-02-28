@@ -123,12 +123,6 @@ export function GamifiedChecklist({ template, onComplete }: GamifiedChecklistPro
                         if (operator === 'not_equals' && valStr !== triggerStr) isNonConformity = true;
                     }
                 });
-            } else {
-                // Se não tem regra configurada no banco, mas a pergunta for de sim/não e a pessoa disser NÃO (false), 
-                // é o padrão universal de não conformidade para um checklist.
-                if (q.type === 'yes_no' && String(resp.value) === 'false') {
-                    isNonConformity = true;
-                }
             }
 
             if (isNonConformity) {
