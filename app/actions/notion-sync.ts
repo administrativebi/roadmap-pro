@@ -90,6 +90,7 @@ export async function syncActionPlansFromNotionAction() {
                 
             // Retorna o ID gerado pelo Supabase lá pro Notion
             if (newPlan) {
+                const notion = getNotionClient();
                 await notion.pages.update({
                     page_id: page.id,
                     properties: {
