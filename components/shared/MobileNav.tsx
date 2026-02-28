@@ -30,7 +30,9 @@ import {
     Settings,
     LogOut,
     Flame,
+    ChevronDown,
     ChevronRight,
+    Award
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
@@ -51,21 +53,28 @@ const drawerItems = [
     { href: "/builder", label: "Construtor", icon: Hammer },
     { href: "/schedule", label: "Agenda", icon: CalendarDays },
     { href: "/ranking", label: "Ranking", icon: Trophy },
-    { href: "/action-plans", label: "Planos de Ação", icon: Lightbulb },
+    {
+        label: "Planos de Ação",
+        icon: Lightbulb,
+        children: [
+            { href: "/action-plans", label: "Meus Planos", icon: Lightbulb },
+            { href: "/manager/action-plans", label: "Definir Pontuação", icon: Award, adminOnly: true },
+        ]
+    },
     { href: "/profile", label: "Meu Perfil", icon: User },
     { href: "/rewards", label: "Loja & Recompensas", icon: ShoppingBag },
     { href: "/duels", label: "Duelos", icon: Swords },
-    { href: "/manager", label: "Painel Gestor", icon: BarChart3 },
-    { href: "/anvisa", label: "Painel ANVISA", icon: ShieldPlus },
-    { href: "/smart-assign", label: "Atribuição IA", icon: Sparkles },
-    { href: "/ai-scanner", label: "Scanner IA", icon: ScanLine },
+    { href: "/manager", label: "Painel Gestor", icon: BarChart3, adminOnly: true },
+    { href: "/anvisa", label: "Painel ANVISA", icon: ShieldPlus, adminOnly: true },
+    { href: "/smart-assign", label: "Atribuição IA", icon: Sparkles, adminOnly: true },
+    { href: "/ai-scanner", label: "Scanner IA", icon: ScanLine, adminOnly: true },
     { href: "/shift-handoff", label: "Troca de Turno", icon: ArrowRightLeft },
     { href: "/training", label: "Treinamento", icon: GraduationCap },
     { href: "/onboarding", label: "Onboarding", icon: Rocket },
     { href: "/recognition", label: "Mural", icon: Crown },
     { href: "/evaluation", label: "Avaliação 360", icon: ClipboardList },
-    { href: "/qrcodes", label: "QR Codes", icon: QrCode },
-    { href: "/settings", label: "Configurações", icon: Settings },
+    { href: "/qrcodes", label: "QR Codes", icon: QrCode, adminOnly: true },
+    { href: "/settings", label: "Configurações", icon: Settings, adminOnly: true },
 ];
 
 export function MobileNav() {
@@ -73,6 +82,7 @@ export function MobileNav() {
     const router = useRouter();
     const supabase = createClient();
     const [drawerOpen, setDrawerOpen] = useState(false);
+    const [expandedMenu, setExpandedMenu] = useState<string>("");
     const [profile, setProfile] = useState<any>(null);
 
     useEffect(() => {
@@ -81,7 +91,7 @@ export function MobileNav() {
             if (user) {
                 const { data } = await supabase
                     .from("profiles")
-                    .select("name, level, total_xp, streak_days, avatar_url")
+                    .select("name, level, total_xp, streak_days, avatar_url, role")
                     .eq("id", user.id)
                     .single();
                 setProfile(data);
@@ -94,6 +104,16 @@ export function MobileNav() {
         await supabase.auth.signOut();
         router.push("/login");
         router.refresh();
+    };
+
+    const isAdmin = profile?.role === 'admin' || profile?.role === 'owner' || profile?.role === 'manager';
+
+    const toggleMenu = (label: string) => {
+        setExpandedMenu(expandedMenu === label ? "" : label);
+    };
+
+    const isChildActive = (children: any[]) => {
+        return children.some(child => pathname === child.href || pathname.startsWith(child.href + "/"));
     };
 
     return (
@@ -241,13 +261,77 @@ export function MobileNav() {
                             {/* Drawer Nav */}
                             <nav className="flex-1 overflow-y-auto p-3 space-y-0.5">
                                 {drawerItems.map((item) => {
-                                    const isActive = pathname === item.href;
+                                    if (item.adminOnly && !isAdmin) return null;
+
+                                    const hasChildren = !!item.children;
+                                    const visibleChildren = hasChildren 
+                                        ? item.children!.filter((c: any) => !c.adminOnly || isAdmin)
+                                        : [];
+
+                                    if (hasChildren && visibleChildren.length === 0) return null;
+
+                                    const isActive = item.href ? pathname === item.href : (hasChildren && isChildActive(visibleChildren));
+                                    const isExpanded = expandedMenu === item.label || isActive;
                                     const Icon = item.icon;
+
+                                    if (hasChildren) {
+                                        return (
+                                            <div key={item.label} className="flex flex-col gap-0.5">
+                                                <button
+                                                    onClick={() => toggleMenu(item.label)}
+                                                    className={cn(
+                                                        "flex items-center justify-between px-4 py-3 rounded-xl text-sm font-medium transition-all w-full",
+                                                        isActive || isExpanded
+                                                            ? "bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-50 font-bold"
+                                                            : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+                                                    )}
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <Icon className={cn("w-5 h-5 shrink-0", (isActive || isExpanded) && "stroke-[2.5] text-amber-500")} />
+                                                        <span>{item.label}</span>
+                                                    </div>
+                                                    {isExpanded ? <ChevronDown className="w-4 h-4 text-zinc-400" /> : <ChevronRight className="w-4 h-4 text-zinc-400" />}
+                                                </button>
+
+                                                <AnimatePresence>
+                                                    {isExpanded && (
+                                                        <motion.div
+                                                            initial={{ height: 0, opacity: 0 }}
+                                                            animate={{ height: "auto", opacity: 1 }}
+                                                            exit={{ height: 0, opacity: 0 }}
+                                                            className="flex flex-col gap-0.5 ml-4 pl-4 border-l-2 border-zinc-100 dark:border-zinc-800 overflow-hidden"
+                                                        >
+                                                            {visibleChildren.map((child: any) => {
+                                                                const isChildActiveItem = pathname === child.href || pathname.startsWith(child.href + "/");
+                                                                const ChildIcon = child.icon;
+                                                                return (
+                                                                    <Link
+                                                                        key={child.href}
+                                                                        href={child.href}
+                                                                        onClick={() => setDrawerOpen(false)}
+                                                                        className={cn(
+                                                                            "flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all",
+                                                                            isChildActiveItem
+                                                                                ? "text-amber-600 dark:text-amber-400 font-bold bg-amber-50 dark:bg-amber-950/30"
+                                                                                : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+                                                                        )}
+                                                                    >
+                                                                        <ChildIcon className={cn("w-4 h-4", isChildActiveItem && "stroke-[2.5]")} />
+                                                                        {child.label}
+                                                                    </Link>
+                                                                );
+                                                            })}
+                                                        </motion.div>
+                                                    )}
+                                                </AnimatePresence>
+                                            </div>
+                                        );
+                                    }
 
                                     return (
                                         <Link
                                             key={item.href}
-                                            href={item.href}
+                                            href={item.href!}
                                             onClick={() => setDrawerOpen(false)}
                                         >
                                             <div
