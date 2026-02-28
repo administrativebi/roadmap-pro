@@ -1,14 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     Clock,
     CheckCircle2,
     Loader2,
-    Sparkles,
     AlertTriangle,
-    Plus
+    Plus,
+    Calendar,
+    Camera,
+    Paperclip,
+    Star,
+    Send,
+    X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
@@ -30,11 +35,14 @@ interface ActionPlan {
     status: PlanStatus;
     priority?: string;
     created_at: string;
-    ai_suggestion?: string;
     notion_page_id?: string;
+    photo_url?: string;
+    file_url?: string;
+    closing_comment?: string;
+    satisfaction_rating?: number;
 }
 
-const statusConfig: Record<PlanStatus, { label: string; icon: typeof Clock; color: string; bg: string }> = {
+const statusConfig: Record<PlanStatus, { label: string; icon: any; color: string; bg: string }> = {
     pending: { label: "Pendente", icon: Clock, color: "text-amber-500", bg: "bg-amber-50 dark:bg-amber-950" },
     in_progress: { label: "Em andamento", icon: Loader2, color: "text-blue-500", bg: "bg-blue-50 dark:bg-blue-950" },
     resolved: { label: "Resolvido", icon: CheckCircle2, color: "text-emerald-500", bg: "bg-emerald-50 dark:bg-emerald-950" },
@@ -55,11 +63,16 @@ export default function ActionPlansPage() {
     const [plans, setPlans] = useState<ActionPlan[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [expandedId, setExpandedId] = useState<string | null>(null);
-    const [aiLoading, setAiLoading] = useState<string | null>(null);
     const [isFormOpen, setIsFormOpen] = useState(false);
     
+    // Filters and Tabs
+    const [activeTab, setActiveTab] = useState<PlanStatus | 'all'>("pending");
+    const [dateFilter, setDateFilter] = useState<string>("");
+    const [relativeFilter, setRelativeFilter] = useState<string>("all");
+
     // Resolution Modal State
     const [resolvingPlanId, setResolvingPlanId] = useState<string | null>(null);
+    const [isUploading, setIsUploading] = useState(false);
     const [resolutionData, setResolutionData] = useState({
         photo_url: "",
         file_url: "",
@@ -72,10 +85,7 @@ export default function ActionPlansPage() {
     const fetchPlans = async () => {
         setIsLoading(true);
         try {
-            // 1. Just-In-Time Sync: Puxar do Notion primeiro
             await syncActionPlansFromNotionAction();
-
-            // 2. Buscar atualizado do Supabase
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) return;
 
@@ -98,26 +108,69 @@ export default function ActionPlansPage() {
         fetchPlans();
     }, [supabase]);
 
-    const handleRequestAI = async (planId: string) => {
-        setAiLoading(planId);
-        // Simulação do request de IA
-        await new Promise((r) => setTimeout(r, 2000));
+    const filteredPlans = useMemo(() => {
+        return plans.filter(p => {
+            const matchesStatus = activeTab === 'all' || p.status === activeTab;
+            
+            let matchesDate = true;
+            if (dateFilter) {
+                matchesDate = p.created_at.startsWith(dateFilter);
+            } else if (relativeFilter !== 'all') {
+                const now = new Date();
+                const planDate = new Date(p.created_at);
+                if (relativeFilter === 'today') {
+                    matchesDate = planDate.toDateString() === now.toDateString();
+                } else if (relativeFilter === 'week') {
+                    const sevenDaysAgo = new Date();
+                    sevenDaysAgo.setDate(now.getDate() - 7);
+                    matchesDate = planDate >= sevenDaysAgo;
+                }
+            }
 
-        // Update local state with mock AI suggestion
-        setPlans(prev => prev.map(p => p.id === planId ? { ...p, ai_suggestion: "Sugestão da IA: Recomenda-se revisar o processo de monitoramento e reforçar o treinamento da equipe nos pontos críticos identificados." } : p));
-        setAiLoading(null);
-    };
+            return matchesStatus && matchesDate;
+        });
+    }, [plans, activeTab, dateFilter, relativeFilter]);
 
     const updateStatus = async (planId: string, newStatus: PlanStatus, notionPageId?: string, extraData?: any) => {
         try {
-            // Se for resolved e tiver dados extras, passamos para a server action
             const result = await updateActionPlanStatusAction(planId, newStatus, notionPageId, extraData);
             if (result.error) throw new Error(result.error);
-            
             setPlans(prev => prev.map(p => p.id === planId ? { ...p, status: newStatus, ...extraData } : p));
         } catch (err) {
             console.error("Erro ao atualizar status:", err);
             alert("Erro ao atualizar.");
+        }
+    };
+
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'photo' | 'file') => {
+        const file = e.target.files?.[0];
+        if (!file || !resolvingPlanId) return;
+
+        setIsUploading(true);
+        try {
+            const fileExt = file.name.split('.').pop();
+            const fileName = `${resolvingPlanId}_${type}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+            const filePath = `action-plans/${fileName}`;
+
+            const { error: uploadError } = await supabase.storage
+                .from('checklist-photos')
+                .upload(filePath, file);
+
+            if (uploadError) throw uploadError;
+
+            const { data: { publicUrl } } = supabase.storage
+                .from('checklist-photos')
+                .getPublicUrl(filePath);
+
+            setResolutionData(prev => ({
+                ...prev,
+                [type === 'photo' ? 'photo_url' : 'file_url']: publicUrl
+            }));
+        } catch (err) {
+            console.error("Erro no upload:", err);
+            alert("Erro ao enviar arquivo.");
+        } finally {
+            setIsUploading(false);
         }
     };
 
@@ -134,15 +187,15 @@ export default function ActionPlansPage() {
     };
 
     return (
-        <div className="space-y-8 relative">
+        <div className="space-y-8 relative pb-20">
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
                         Planos de Ação
                     </h1>
-                    <p className="text-zinc-500 dark:text-zinc-400 mt-1 font-medium">
-                        Melhore sua conformidade resolvendo pendências
+                    <p className="text-zinc-500 dark:text-zinc-400 mt-1 font-medium text-sm">
+                        Gerencie e resolva não-conformidades identificadas.
                     </p>
                 </div>
                 <button
@@ -154,13 +207,54 @@ export default function ActionPlansPage() {
                 </button>
             </div>
 
+            {/* Filters Bar */}
+            <div className="bg-white dark:bg-zinc-900 p-2 rounded-2xl border border-zinc-100 dark:border-zinc-800 flex flex-col md:flex-row gap-4 items-center">
+                <div className="flex bg-zinc-50 dark:bg-zinc-950 p-1 rounded-xl w-full md:w-auto overflow-x-auto scrollbar-none">
+                    {(['all', 'pending', 'in_progress', 'resolved', 'canceled'] as const).map((s) => (
+                        <button
+                            key={s}
+                            onClick={() => setActiveTab(s)}
+                            className={cn(
+                                "px-4 py-2 rounded-lg text-[10px] font-black transition-all uppercase tracking-wider whitespace-nowrap",
+                                activeTab === s 
+                                    ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-sm" 
+                                    : "text-zinc-400 hover:text-zinc-600"
+                            )}
+                        >
+                            {s === 'all' ? 'Tudo' : statusConfig[s].label}
+                        </button>
+                    ))}
+                </div>
+
+                <div className="flex items-center gap-3 w-full md:w-auto ml-auto pr-2">
+                    <div className="relative flex-1 md:w-40">
+                        <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
+                        <input 
+                            type="date" 
+                            value={dateFilter}
+                            onChange={(e) => { setDateFilter(e.target.value); setRelativeFilter('all'); }}
+                            className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-xl pl-9 pr-3 py-2 text-xs focus:ring-2 focus:ring-orange-500 outline-none"
+                        />
+                    </div>
+                    <select 
+                        value={relativeFilter}
+                        onChange={(e) => { setRelativeFilter(e.target.value); setDateFilter(''); }}
+                        className="bg-zinc-50 dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-orange-500 outline-none"
+                    >
+                        <option value="all">Todas as Datas</option>
+                        <option value="today">Hoje</option>
+                        <option value="week">Últimos 7 dias</option>
+                    </select>
+                </div>
+            </div>
+
             {/* Modal de Formulário */}
             {isFormOpen && (
                 <ActionPlanForm 
                     onClose={() => setIsFormOpen(false)}
                     onSuccess={() => {
                         setIsFormOpen(false);
-                        fetchPlans(); // Recarrega os planos para ver o novo
+                        fetchPlans();
                     }}
                 />
             )}
@@ -169,13 +263,13 @@ export default function ActionPlansPage() {
             {isLoading ? (
                 <div className="flex flex-col items-center justify-center p-12 text-zinc-500">
                     <Loader2 className="w-8 h-8 animate-spin mb-4 text-orange-500" />
-                    <p className="font-bold uppercase tracking-widest text-xs">Sincronizando com Notion...</p>
+                    <p className="font-bold uppercase tracking-widest text-xs">Sincronizando...</p>
                 </div>
-            ) : plans.length === 0 ? (
+            ) : filteredPlans.length === 0 ? (
                 <div className="flex flex-col items-center justify-center p-12 text-zinc-500 bg-white dark:bg-zinc-950 rounded-[2.5rem] border border-dashed border-zinc-200 dark:border-zinc-800">
                     <CheckCircle2 className="w-12 h-12 mb-4 text-emerald-500/50" />
-                    <p className="font-bold">Nenhum plano de ação pendente!</p>
-                    <p className="text-sm">Tudo em conformidade por aqui.</p>
+                    <p className="font-bold">Nenhum plano encontrado!</p>
+                    <p className="text-sm">Tudo em conformidade nesta visualização.</p>
                 </div>
             ) : (
                 <motion.div
@@ -184,7 +278,7 @@ export default function ActionPlansPage() {
                     animate="visible"
                     className="space-y-4 max-w-3xl"
                 >
-                    {plans.map((plan) => {
+                    {filteredPlans.map((plan) => {
                         const status = statusConfig[plan.status || 'pending'];
                         const StatusIcon = status.icon;
                         const isExpanded = expandedId === plan.id;
@@ -200,13 +294,13 @@ export default function ActionPlansPage() {
                                     onClick={() => setExpandedId(isExpanded ? null : plan.id)}
                                     className="flex items-center gap-4 p-6 cursor-pointer"
                                 >
-                                    <div className={cn("p-3 rounded-2xl", plan.priority === 'high' ? "bg-rose-50 text-rose-500" : "bg-zinc-100 text-zinc-500")}>
+                                    <div className={cn("p-3 rounded-2xl shadow-inner", plan.priority === 'high' ? "bg-rose-50 text-rose-500 dark:bg-rose-950/30" : "bg-zinc-50 text-zinc-500 dark:bg-zinc-900")}>
                                         <AlertTriangle className="w-6 h-6" />
                                     </div>
                                     <div className="flex-1">
                                         <div className="flex items-center gap-2">
                                             <h3 className="font-bold text-zinc-900 dark:text-zinc-50">{plan.title}</h3>
-                                            {plan.priority === 'high' && <span className="bg-rose-100 text-rose-600 text-[8px] font-black px-1.5 py-0.5 rounded uppercase">Urgent</span>}
+                                            {plan.priority === 'high' && <span className="bg-rose-100 dark:bg-rose-900/50 text-rose-600 dark:text-rose-400 text-[8px] font-black px-1.5 py-0.5 rounded uppercase">Urgente</span>}
                                         </div>
                                         <p className="text-xs text-zinc-500 mt-1 line-clamp-1">
                                             {plan.description || "Sem descrição"}
@@ -247,11 +341,11 @@ export default function ActionPlansPage() {
                                                     {plan.step_by_step && (
                                                         <div>
                                                             <h4 className="text-[10px] font-black tracking-widest text-zinc-400 uppercase">Passo a passo</h4>
-                                                            <p className="text-sm text-zinc-800 dark:text-zinc-200 mt-1 whitespace-pre-line">{plan.step_by_step}</p>
+                                                            <p className="text-sm text-zinc-800 dark:text-zinc-200 mt-1 whitespace-pre-line leading-relaxed">{plan.step_by_step}</p>
                                                         </div>
                                                     )}
 
-                                                    <div className="grid grid-cols-2 gap-4 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                                                    <div className="grid grid-cols-2 gap-4 pt-4 border-t border-zinc-50 dark:border-zinc-800/50">
                                                         <div>
                                                             <h4 className="text-[10px] font-black tracking-widest text-zinc-400 uppercase">Custo Estimado</h4>
                                                             <p className="text-sm text-zinc-800 dark:text-zinc-200 mt-1 font-medium">
@@ -269,41 +363,40 @@ export default function ActionPlansPage() {
                                                     </div>
                                                 </div>
 
-                                                {/* AI Suggestion Box */}
-                                                {plan.ai_suggestion ? (
-                                                    <div className="bg-gradient-to-br from-indigo-50 to-violet-50 dark:from-indigo-950/30 dark:to-violet-950/30 rounded-2xl p-5 border border-indigo-100/50 dark:border-indigo-900/50">
-                                                        <div className="flex items-center gap-2 mb-3">
-                                                            <Sparkles className="w-4 h-4 text-indigo-500" />
-                                                            <span className="text-xs font-black text-indigo-700 dark:text-indigo-300 uppercase tracking-widest">
-                                                                Insights da IA
-                                                            </span>
-                                                        </div>
-                                                        <p className="text-sm text-indigo-900/80 dark:text-indigo-200/80 leading-relaxed font-medium">
-                                                            {plan.ai_suggestion}
-                                                        </p>
-                                                    </div>
-                                                ) : (
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); handleRequestAI(plan.id); }}
-                                                        disabled={aiLoading === plan.id}
-                                                        className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl border-2 border-dashed border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 hover:bg-white dark:hover:bg-zinc-900 transition-all text-xs font-black uppercase tracking-widest"
-                                                    >
-                                                        {aiLoading === plan.id ? (
-                                                            <>
-                                                                <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
-                                                                Analisando com IA...
-                                                            </>
-                                                        ) : (
-                                                            <>
-                                                                <Sparkles className="w-4 h-4" />
-                                                                Sugerir ações corretivas com IA
-                                                            </>
+                                                {/* Exibição das Evidências (Se Resolvido) */}
+                                                {plan.status === 'resolved' && (
+                                                    <div className="p-5 bg-emerald-50/30 dark:bg-emerald-950/10 rounded-2xl border border-emerald-100 dark:border-emerald-900/30 space-y-4">
+                                                        <h4 className="text-[10px] font-black tracking-widest text-emerald-600 dark:text-emerald-400 uppercase">Resultado da Resolução</h4>
+                                                        
+                                                        {plan.closing_comment && (
+                                                            <p className="text-sm text-zinc-700 dark:text-zinc-300 italic">"{plan.closing_comment}"</p>
                                                         )}
-                                                    </button>
+
+                                                        <div className="flex gap-4">
+                                                            {plan.photo_url && (
+                                                                <a href={plan.photo_url} target="_blank" rel="noreferrer" className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-zinc-800 rounded-xl text-[10px] font-bold text-zinc-600 dark:text-zinc-400 border border-zinc-100 dark:border-zinc-700 shadow-sm">
+                                                                    <Camera className="w-3.5 h-3.5 text-emerald-500" /> Ver Foto
+                                                                </a>
+                                                            )}
+                                                            {plan.file_url && (
+                                                                <a href={plan.file_url} target="_blank" rel="noreferrer" className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-zinc-800 rounded-xl text-[10px] font-bold text-zinc-600 dark:text-zinc-400 border border-zinc-100 dark:border-zinc-700 shadow-sm">
+                                                                    <Paperclip className="w-3.5 h-3.5 text-indigo-500" /> Ver Anexo
+                                                                </a>
+                                                            )}
+                                                        </div>
+
+                                                        {plan.satisfaction_rating && (
+                                                            <div className="flex gap-1">
+                                                                {[1,2,3,4,5].map(s => (
+                                                                    <Star key={s} className={cn("w-4 h-4", s <= plan.satisfaction_rating! ? "fill-amber-400 text-amber-400" : "text-zinc-200 dark:text-zinc-800")} />
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 )}
 
                                                 <div className="flex items-center justify-between pt-4 border-t border-zinc-200 dark:border-zinc-800">
-                                                    <span className="text-[10px] text-zinc-400 font-bold uppercase">
+                                                    <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">
                                                         Criado em {new Date(plan.created_at).toLocaleDateString("pt-BR")}
                                                     </span>
                                                     <div className="flex gap-2">
@@ -311,11 +404,11 @@ export default function ActionPlansPage() {
                                                             <button
                                                                 onClick={() => {
                                                                     setResolvingPlanId(plan.id);
-                                                                    setExpandedId(plan.id); // keeps expanded
+                                                                    setExpandedId(plan.id);
                                                                 }}
                                                                 className="px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-black uppercase hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-500/20"
                                                             >
-                                                                Resolver
+                                                                Finalizar e Resolver
                                                             </button>
                                                         )}
                                                         {plan.status === 'pending' && (
@@ -323,7 +416,7 @@ export default function ActionPlansPage() {
                                                                 onClick={() => updateStatus(plan.id, 'in_progress', plan.notion_page_id)}
                                                                 className="px-4 py-2 bg-blue-500 text-white rounded-xl text-xs font-black uppercase hover:bg-blue-600 transition-colors shadow-lg shadow-blue-500/20"
                                                             >
-                                                                Iniciar
+                                                                Iniciar Agora
                                                             </button>
                                                         )}
                                                     </div>
@@ -338,54 +431,56 @@ export default function ActionPlansPage() {
                                                             exit={{ height: 0, opacity: 0 }}
                                                             className="overflow-hidden"
                                                         >
-                                                            <div className="mt-4 p-5 bg-zinc-100 dark:bg-zinc-900 rounded-2xl border border-emerald-100 dark:border-emerald-900/30 space-y-4">
-                                                                <h4 className="text-sm font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-2">
-                                                                    <CheckCircle2 className="w-4 h-4" />
-                                                                    Finalizar Plano de Ação
-                                                                </h4>
+                                                            <div className="mt-4 p-5 bg-zinc-100 dark:bg-zinc-900 rounded-3xl border border-emerald-100 dark:border-emerald-900/30 space-y-5">
+                                                                <div className="flex items-center justify-between">
+                                                                    <h4 className="text-sm font-black text-emerald-600 dark:text-emerald-400 flex items-center gap-2 uppercase tracking-tighter">
+                                                                        <CheckCircle2 className="w-4 h-4" />
+                                                                        Evidências da Solução
+                                                                    </h4>
+                                                                    <button onClick={() => setResolvingPlanId(null)} className="p-1.5 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-full transition-colors">
+                                                                        <X className="w-4 h-4 text-zinc-400" />
+                                                                    </button>
+                                                                </div>
                                                                 
                                                                 <div>
-                                                                    <label className="block text-xs font-bold text-zinc-500 mb-1">Comentário de Finalização</label>
+                                                                    <label className="block text-[10px] font-black text-zinc-500 mb-2 uppercase tracking-widest">Comentário de Finalização</label>
                                                                     <textarea
                                                                         value={resolutionData.closing_comment}
                                                                         onChange={e => setResolutionData({...resolutionData, closing_comment: e.target.value})}
                                                                         rows={3}
-                                                                        placeholder="Descreva o que foi feito..."
-                                                                        className="w-full bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                                                                        placeholder="Descreva brevemente o que foi feito..."
+                                                                        className="w-full bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm focus:ring-4 focus:ring-emerald-500/10 focus:outline-none transition-all resize-none"
                                                                     />
                                                                 </div>
 
                                                                 <div className="grid grid-cols-2 gap-4">
                                                                     <div>
-                                                                        <label className="block text-xs font-bold text-zinc-500 mb-1">Anexar Foto (URL provisória)</label>
-                                                                        <input
-                                                                            type="text"
-                                                                            value={resolutionData.photo_url}
-                                                                            onChange={e => setResolutionData({...resolutionData, photo_url: e.target.value})}
-                                                                            placeholder="https://..."
-                                                                            className="w-full bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                                                                        />
+                                                                        <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-2 text-center">Anexar Foto</label>
+                                                                        <label className="cursor-pointer flex flex-col items-center justify-center p-5 bg-white dark:bg-zinc-950 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl hover:border-emerald-500 hover:bg-emerald-50/10 transition-all">
+                                                                            {resolutionData.photo_url ? <CheckCircle2 className="w-8 h-8 text-emerald-500" /> : <Camera className="w-8 h-8 text-zinc-300" />}
+                                                                            <span className="text-[10px] mt-2 text-zinc-500 font-bold">{isUploading ? "Enviando..." : resolutionData.photo_url ? "Pronto!" : "Câmera / Galeria"}</span>
+                                                                            <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => handleFileUpload(e, 'photo')} />
+                                                                        </label>
                                                                     </div>
                                                                     <div>
-                                                                        <label className="block text-xs font-bold text-zinc-500 mb-1">Anexar Arquivo (URL provisória)</label>
-                                                                        <input
-                                                                            type="text"
-                                                                            value={resolutionData.file_url}
-                                                                            onChange={e => setResolutionData({...resolutionData, file_url: e.target.value})}
-                                                                            placeholder="https://..."
-                                                                            className="w-full bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                                                                        />
+                                                                        <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-2 text-center">Anexar Arquivo</label>
+                                                                        <label className="cursor-pointer flex flex-col items-center justify-center p-5 bg-white dark:bg-zinc-950 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl hover:border-emerald-500 hover:bg-emerald-50/10 transition-all">
+                                                                            {resolutionData.file_url ? <CheckCircle2 className="w-8 h-8 text-emerald-500" /> : <Paperclip className="w-8 h-8 text-zinc-300" />}
+                                                                            <span className="text-[10px] mt-2 text-zinc-500 font-bold">{isUploading ? "Enviando..." : resolutionData.file_url ? "Pronto!" : "Docs / PDF / Outros"}</span>
+                                                                            <input type="file" className="hidden" onChange={(e) => handleFileUpload(e, 'file')} />
+                                                                        </label>
                                                                     </div>
                                                                 </div>
 
-                                                                <div>
-                                                                    <label className="block text-xs font-bold text-zinc-500 mb-1">Satisfação com o Resultado</label>
-                                                                    <div className="flex gap-2">
+                                                                <div className="flex flex-col items-center gap-3 py-2">
+                                                                    <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest">Satisfação com o Resultado</label>
+                                                                    <div className="flex justify-center gap-3">
                                                                         {[1,2,3,4,5].map(star => (
                                                                             <button
                                                                                 key={star}
+                                                                                type="button"
                                                                                 onClick={() => setResolutionData({...resolutionData, satisfaction_rating: star})}
-                                                                                className={cn("text-2xl transition-transform hover:scale-110", star <= resolutionData.satisfaction_rating ? "text-amber-400" : "text-zinc-300 dark:text-zinc-700")}
+                                                                                className={cn("text-4xl transition-all hover:scale-125 active:scale-90", star <= resolutionData.satisfaction_rating ? "text-amber-400 drop-shadow-sm" : "text-zinc-200 dark:text-zinc-800")}
                                                                             >
                                                                                 ★
                                                                             </button>
@@ -393,19 +488,14 @@ export default function ActionPlansPage() {
                                                                     </div>
                                                                 </div>
 
-                                                                <div className="flex justify-end gap-2 pt-2">
-                                                                    <button
-                                                                        onClick={() => setResolvingPlanId(null)}
-                                                                        className="px-4 py-2 text-xs font-bold text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
-                                                                    >
-                                                                        Cancelar
-                                                                    </button>
+                                                                <div className="flex gap-3 pt-2">
                                                                     <button
                                                                         onClick={handleResolveSubmit}
-                                                                        className="px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-black uppercase hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-500/20 flex items-center gap-2"
+                                                                        disabled={isUploading || !resolutionData.closing_comment}
+                                                                        className="flex-1 py-4 bg-emerald-500 text-white rounded-2xl font-black uppercase text-sm shadow-xl shadow-emerald-500/20 flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95 transition-all"
                                                                     >
-                                                                        <CheckCircle2 className="w-4 h-4" />
-                                                                        Confirmar Resolução
+                                                                        <Send className="w-5 h-5" />
+                                                                        Concluir e Ganhar XP
                                                                     </button>
                                                                 </div>
                                                             </div>

@@ -218,7 +218,9 @@ export async function createActionPlanInNotion(planData: Record<string, unknown>
         properties["Vai custar dinheiro ou só tempo?"] = { select: { name: planData.cost_type === "dinheiro" ? "Dinheiro" : "Apenas Tempo" } };
     }
     if (planData.due_date) {
-        properties["Qual o prazo final?"] = { date: { start: planData.due_date as string } };
+        // Envia apenas a data (YYYY-MM-DD) sem o horário
+        const dateOnly = new Date(planData.due_date as string).toISOString().split('T')[0];
+        properties["Qual o prazo final?"] = { date: { start: dateOnly } };
     }
     if (planData.assignee_notion_id) {
         properties["Quem vai resolver?"] = { relation: [{ id: planData.assignee_notion_id as string }] };

@@ -37,7 +37,10 @@ export async function POST(req: Request) {
             }
         }
 
-        const notionId = await createActionPlanInNotion(planData);
+        const notionId = await createActionPlanInNotion({
+            ...planData,
+            due_date: planData.due_date ? new Date(planData.due_date).toISOString().split('T')[0] : null
+        });
         
         if (notionId && planData.id) {
             await supabase.from('action_plans').update({ notion_page_id: notionId }).eq('id', planData.id);

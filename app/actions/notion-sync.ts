@@ -64,10 +64,10 @@ export async function syncActionPlansFromNotionAction() {
 
         const planData = {
             title,
-            description: benefit, // Usamos benefit no lugar de description antiga
+            description: benefit, 
             benefit,
             step_by_step: stepByStep,
-            due_date: dueDate,
+            due_date: dueDate ? dueDate.split('T')[0] : null,
             cost_type: costType,
             awarded_xp: awardedXp,
             status,
