@@ -19,6 +19,8 @@ import { ChecklistQuestion, ChecklistTemplate, QuestionResponse } from "@/types"
 import { cn } from "@/lib/utils";
 import { ChecklistTimer, calculateTimerBonuses } from "./ChecklistTimer";
 import { SignatureCanvas } from "./SignatureCanvas";
+import { ActionPlanForm } from "@/components/features/ActionPlanForm";
+import { AlertTriangle } from "lucide-react";
 
 interface GamifiedChecklistProps {
     template: ChecklistTemplate;
@@ -36,6 +38,8 @@ export function GamifiedChecklist({ template, onComplete }: GamifiedChecklistPro
     const [showSignature, setShowSignature] = useState(false);
     const [timerElapsed, setTimerElapsed] = useState(0);
     const [hadInactivity, setHadInactivity] = useState(false);
+    
+    const [showActionPlanForm, setShowActionPlanForm] = useState(false);
 
     const questions = template.questions;
     const totalQuestions = questions.length;
@@ -239,7 +243,7 @@ export function GamifiedChecklist({ template, onComplete }: GamifiedChecklistPro
                     className="bg-white dark:bg-zinc-950 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-6 shadow-sm"
                 >
                     {/* Question Header */}
-                    <div className="flex items-start gap-3 mb-6">
+                    <div className="flex items-start justify-between mb-6">
                         <div className="flex items-center gap-2">
                             <div
                                 className={cn(
@@ -256,6 +260,14 @@ export function GamifiedChecklist({ template, onComplete }: GamifiedChecklistPro
                                 {currentQ.points} pts
                             </div>
                         </div>
+                        
+                        <button 
+                            onClick={() => setShowActionPlanForm(true)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-rose-950/30 dark:hover:bg-rose-900/50 dark:text-rose-400 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors"
+                        >
+                            <AlertTriangle className="w-3.5 h-3.5" />
+                            Gerar Plano de Ação
+                        </button>
                     </div>
 
                     <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-50 mb-6">
@@ -357,6 +369,14 @@ export function GamifiedChecklist({ template, onComplete }: GamifiedChecklistPro
                     </button>
                 )}
             </div>
+
+            {/* Modal de Plano de Ação */}
+            {showActionPlanForm && (
+                <ActionPlanForm
+                    onClose={() => setShowActionPlanForm(false)}
+                    onSuccess={() => setShowActionPlanForm(false)}
+                />
+            )}
         </div>
     );
 }

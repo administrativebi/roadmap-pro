@@ -29,6 +29,7 @@ import {
     ShieldPlus,
     ChevronDown,
     ChevronRight,
+    Award
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
@@ -48,7 +49,14 @@ const navItems = [
     },
     { href: "/schedule", label: "Agenda", icon: CalendarDays },
     { href: "/ranking", label: "Ranking", icon: Trophy },
-    { href: "/action-plans", label: "Planos de Ação", icon: Lightbulb },
+    {
+        label: "Planos de Ação",
+        icon: Lightbulb,
+        children: [
+            { href: "/action-plans", label: "Meus Planos", icon: Lightbulb },
+            { href: "/manager/action-plans", label: "Definir Pontuação", icon: Award, adminOnly: true },
+        ]
+    },
     { href: "/profile", label: "Meu Perfil", icon: User },
     { href: "/rewards", label: "Loja & Recompensas", icon: ShoppingBag },
     { href: "/duels", label: "Duelos", icon: Swords },
@@ -78,7 +86,7 @@ export function Sidebar() {
             if (user) {
                 const { data } = await supabase
                     .from("profiles")
-                    .select("name, level, total_xp, streak_days")
+                    .select("name, level, total_xp, streak_days, role")
                     .eq("id", user.id)
                     .single();
                 setProfile(data);
@@ -100,6 +108,8 @@ export function Sidebar() {
     const isChildActive = (children: any[]) => {
         return children.some(child => pathname === child.href || pathname.startsWith(child.href + "/"));
     };
+
+    const isAdmin = profile?.role === 'admin' || profile?.role === 'owner' || profile?.role === 'manager';
 
     return (
         <aside data-tour="sidebar" className="fixed left-0 top-0 z-40 h-screen w-64 bg-white dark:bg-zinc-950 border-r border-zinc-100 dark:border-zinc-900 flex flex-col">
@@ -132,9 +142,19 @@ export function Sidebar() {
 
             {/* Navigation */}
             <nav className="flex-1 px-4 py-4 space-y-1.5 overflow-y-auto overflow-x-hidden custom-scrollbar">
-                {navItems.map((item) => {
+                {navItems.map((item: any) => {
+                    if (item.adminOnly && !isAdmin) return null;
+
                     const hasChildren = !!item.children;
-                    const isActive = item.href ? pathname === item.href : (hasChildren && isChildActive(item.children || []));
+                    // Filter children that are adminOnly if user is not admin
+                    const visibleChildren = hasChildren 
+                        ? item.children.filter((c: any) => !c.adminOnly || isAdmin)
+                        : [];
+
+                    // If it has children but all are filtered out, don't show the parent if parent only exists for children
+                    if (hasChildren && visibleChildren.length === 0) return null;
+
+                    const isActive = item.href ? pathname === item.href : (hasChildren && isChildActive(visibleChildren));
                     const isExpanded = expandedMenu === item.label || isActive;
                     const Icon = item.icon;
 
@@ -159,7 +179,7 @@ export function Sidebar() {
 
                                 {isExpanded && (
                                     <div className="flex flex-col gap-1 ml-4 pl-4 border-l-2 border-zinc-100 dark:border-zinc-800">
-                                        {item.children?.map(child => {
+                                        {visibleChildren.map((child: any) => {
                                             const isChildCurrent = pathname === child.href || pathname.startsWith(child.href + "/") && child.href !== "/checklists";
                                             // Handle special case for /checklists so it doesn't stay active on /checklists/dashboard
                                             const isExactMatch = pathname === child.href;

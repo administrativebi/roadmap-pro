@@ -15,11 +15,24 @@ CREATE TABLE organizations (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Setores da Empresa
+CREATE TABLE sectors (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  icon TEXT,
+  description TEXT,
+  notion_page_id TEXT,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Tabela de Usuários (com gamificação expandida)
 CREATE TABLE users (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   full_name TEXT NOT NULL,
   avatar_url TEXT,
+  notion_page_id TEXT,
   global_score INTEGER DEFAULT 0,
   level INTEGER DEFAULT 1,
   streak_days INTEGER DEFAULT 0,
@@ -97,11 +110,20 @@ ALTER TABLE checklists_entries
 -- Planos de Ação
 CREATE TABLE action_plans (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  checklist_entry_id UUID REFERENCES checklists_entries(id) ON DELETE CASCADE,
+  checklist_entry_id UUID REFERENCES checklists_entries(id) ON DELETE SET NULL,
   title TEXT NOT NULL,
   description TEXT,
+  benefit TEXT,
+  assignee_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  sector_id UUID REFERENCES sectors(id) ON DELETE SET NULL,
+  due_date TIMESTAMPTZ,
+  step_by_step TEXT,
+  cost_type TEXT CHECK (cost_type IN ('apenas_tempo', 'dinheiro')),
+  estimated_cost NUMERIC(10,2),
+  awarded_xp INTEGER,
   ai_suggestion TEXT,
-  status TEXT CHECK (status IN ('pending', 'in_progress', 'resolved')) DEFAULT 'pending',
+  status TEXT CHECK (status IN ('pending', 'in_progress', 'resolved', 'canceled')) DEFAULT 'pending',
+  notion_page_id TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   resolved_at TIMESTAMPTZ
 );

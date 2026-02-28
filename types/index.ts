@@ -126,11 +126,20 @@ export type ChecklistSchedule = {
 // ─── Planos de Ação ────────────────────────────────────────
 export type ActionPlan = {
     id: string;
-    checklist_entry_id: string;
+    checklist_entry_id?: string;
     title: string;
     description?: string;
+    benefit?: string;
+    assignee_id?: string;
+    sector_id?: string;
+    due_date?: string;
+    step_by_step?: string;
+    cost_type?: "apenas_tempo" | "dinheiro";
+    estimated_cost?: number;
+    awarded_xp?: number;
     ai_suggestion?: string;
-    status: "pending" | "in_progress" | "resolved";
+    status: "pending" | "in_progress" | "resolved" | "canceled";
+    notion_page_id?: string;
     created_at: string;
     resolved_at?: string;
 };

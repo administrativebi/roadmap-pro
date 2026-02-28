@@ -3,26 +3,31 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-    Lightbulb,
     Clock,
     CheckCircle2,
     Loader2,
     Sparkles,
-    Plus,
-    ChevronRight,
     AlertTriangle,
+    Plus
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
+import { syncActionPlansFromNotionAction } from "@/app/actions/notion-sync";
+import { ActionPlanForm } from "@/components/features/ActionPlanForm";
 
-type PlanStatus = "pending" | "in_progress" | "resolved";
+type PlanStatus = "pending" | "in_progress" | "resolved" | "canceled";
 
 interface ActionPlan {
     id: string;
     title: string;
     description: string;
+    benefit?: string;
+    step_by_step?: string;
+    cost_type?: string;
+    due_date?: string;
+    awarded_xp?: number;
     status: PlanStatus;
-    priority: string;
+    priority?: string;
     created_at: string;
     ai_suggestion?: string;
 }
@@ -31,6 +36,7 @@ const statusConfig: Record<PlanStatus, { label: string; icon: typeof Clock; colo
     pending: { label: "Pendente", icon: Clock, color: "text-amber-500", bg: "bg-amber-50 dark:bg-amber-950" },
     in_progress: { label: "Em andamento", icon: Loader2, color: "text-blue-500", bg: "bg-blue-50 dark:bg-blue-950" },
     resolved: { label: "Resolvido", icon: CheckCircle2, color: "text-emerald-500", bg: "bg-emerald-50 dark:bg-emerald-950" },
+    canceled: { label: "Cancelado", icon: AlertTriangle, color: "text-zinc-500", bg: "bg-zinc-100 dark:bg-zinc-900" },
 };
 
 const containerVariants = {
@@ -48,28 +54,35 @@ export default function ActionPlansPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [aiLoading, setAiLoading] = useState<string | null>(null);
+    const [isFormOpen, setIsFormOpen] = useState(false);
     const supabase = createClient();
 
-    useEffect(() => {
-        async function fetchPlans() {
-            try {
-                const { data: { user } } = await supabase.auth.getUser();
-                if (!user) return;
+    const fetchPlans = async () => {
+        setIsLoading(true);
+        try {
+            // 1. Just-In-Time Sync: Puxar do Notion primeiro
+            await syncActionPlansFromNotionAction();
 
-                const { data, error } = await supabase
-                    .from('action_plans')
-                    .select('*')
-                    .eq('assignee_id', user.id) // Or show all for managers
-                    .order('created_at', { ascending: false });
+            // 2. Buscar atualizado do Supabase
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
 
-                if (error) throw error;
-                setPlans(data || []);
-            } catch (err) {
-                console.error("Erro ao buscar planos:", err);
-            } finally {
-                setIsLoading(false);
-            }
+            const { data, error } = await supabase
+                .from('action_plans')
+                .select('*')
+                .eq('assignee_id', user.id)
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+            setPlans(data || []);
+        } catch (err) {
+            console.error("Erro ao buscar planos:", err);
+        } finally {
+            setIsLoading(false);
         }
+    };
+
+    useEffect(() => {
         fetchPlans();
     }, [supabase]);
 
@@ -102,9 +115,9 @@ export default function ActionPlansPage() {
     };
 
     return (
-        <div className="space-y-8">
+        <div className="space-y-8 relative">
             {/* Header */}
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
                         Planos de Ação
@@ -113,13 +126,31 @@ export default function ActionPlansPage() {
                         Melhore sua conformidade resolvendo pendências
                     </p>
                 </div>
+                <button
+                    onClick={() => setIsFormOpen(true)}
+                    className="flex items-center justify-center gap-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors"
+                >
+                    <Plus className="w-4 h-4" />
+                    Novo Plano
+                </button>
             </div>
+
+            {/* Modal de Formulário */}
+            {isFormOpen && (
+                <ActionPlanForm 
+                    onClose={() => setIsFormOpen(false)}
+                    onSuccess={() => {
+                        setIsFormOpen(false);
+                        fetchPlans(); // Recarrega os planos para ver o novo
+                    }}
+                />
+            )}
 
             {/* Plans List */}
             {isLoading ? (
                 <div className="flex flex-col items-center justify-center p-12 text-zinc-500">
                     <Loader2 className="w-8 h-8 animate-spin mb-4 text-orange-500" />
-                    <p className="font-bold uppercase tracking-widest text-xs">Carregando planos...</p>
+                    <p className="font-bold uppercase tracking-widest text-xs">Sincronizando com Notion...</p>
                 </div>
             ) : plans.length === 0 ? (
                 <div className="flex flex-col items-center justify-center p-12 text-zinc-500 bg-white dark:bg-zinc-950 rounded-[2.5rem] border border-dashed border-zinc-200 dark:border-zinc-800">
@@ -159,7 +190,7 @@ export default function ActionPlansPage() {
                                             {plan.priority === 'high' && <span className="bg-rose-100 text-rose-600 text-[8px] font-black px-1.5 py-0.5 rounded uppercase">Urgent</span>}
                                         </div>
                                         <p className="text-xs text-zinc-500 mt-1 line-clamp-1">
-                                            {plan.description}
+                                            {plan.description || "Sem descrição"}
                                         </p>
                                     </div>
                                     <div className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider", status.bg, status.color)}>
@@ -178,10 +209,45 @@ export default function ActionPlansPage() {
                                             className="overflow-hidden bg-zinc-50 dark:bg-zinc-900/50"
                                         >
                                             <div className="p-6 pt-0 space-y-6">
-                                                <div className="p-4 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800">
-                                                    <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed font-medium">
-                                                        {plan.description}
-                                                    </p>
+                                                
+                                                {/* Detalhamento 5W2H */}
+                                                <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 space-y-5">
+                                                    <div>
+                                                        <h4 className="text-[10px] font-black tracking-widest text-zinc-400 uppercase">Qual é a tarefa ou problema?</h4>
+                                                        <p className="text-sm text-zinc-800 dark:text-zinc-200 mt-1 font-medium">{plan.title}</p>
+                                                        {plan.description && <p className="text-xs text-zinc-500 mt-1">{plan.description}</p>}
+                                                    </div>
+                                                    
+                                                    {plan.benefit && (
+                                                        <div>
+                                                            <h4 className="text-[10px] font-black tracking-widest text-emerald-500/80 uppercase">Benefício esperado</h4>
+                                                            <p className="text-sm text-zinc-800 dark:text-zinc-200 mt-1">{plan.benefit}</p>
+                                                        </div>
+                                                    )}
+
+                                                    {plan.step_by_step && (
+                                                        <div>
+                                                            <h4 className="text-[10px] font-black tracking-widest text-zinc-400 uppercase">Passo a passo</h4>
+                                                            <p className="text-sm text-zinc-800 dark:text-zinc-200 mt-1 whitespace-pre-line">{plan.step_by_step}</p>
+                                                        </div>
+                                                    )}
+
+                                                    <div className="grid grid-cols-2 gap-4 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                                                        <div>
+                                                            <h4 className="text-[10px] font-black tracking-widest text-zinc-400 uppercase">Custo Estimado</h4>
+                                                            <p className="text-sm text-zinc-800 dark:text-zinc-200 mt-1 font-medium">
+                                                                {plan.cost_type === 'dinheiro' ? '💰 Requer Investimento' : '⏳ Apenas Tempo'}
+                                                            </p>
+                                                        </div>
+                                                        {plan.due_date && (
+                                                            <div>
+                                                                <h4 className="text-[10px] font-black tracking-widest text-rose-500/80 uppercase">Prazo Final</h4>
+                                                                <p className="text-sm text-zinc-800 dark:text-zinc-200 mt-1 font-medium">
+                                                                    {new Date(plan.due_date).toLocaleDateString("pt-BR")}
+                                                                </p>
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
 
                                                 {/* AI Suggestion Box */}
@@ -222,7 +288,7 @@ export default function ActionPlansPage() {
                                                         Criado em {new Date(plan.created_at).toLocaleDateString("pt-BR")}
                                                     </span>
                                                     <div className="flex gap-2">
-                                                        {plan.status !== 'resolved' && (
+                                                        {plan.status !== 'resolved' && plan.status !== 'canceled' && (
                                                             <button
                                                                 onClick={() => updateStatus(plan.id, 'resolved')}
                                                                 className="px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-black uppercase hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-500/20"
