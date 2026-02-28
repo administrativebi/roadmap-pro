@@ -1,10 +1,10 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
+import { createServerSupabase } from "@/lib/supabase/server";
 import { updateActionPlanXPInNotion } from "@/services/notion";
 
 export async function assignXPToActionPlan(planId: string, notionPageId: string, xp: number) {
-    const supabase = await createClient();
+    const supabase = await createServerSupabase();
     
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { error: "Não autenticado" };
