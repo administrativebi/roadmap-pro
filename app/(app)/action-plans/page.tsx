@@ -14,6 +14,8 @@ import {
     Star,
     Send,
     X,
+    User as UserIcon,
+    Layers,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
@@ -40,6 +42,7 @@ interface ActionPlan {
     file_url?: string;
     closing_comment?: string;
     satisfaction_rating?: number;
+    profiles?: { name: string } | null;
 }
 
 const statusConfig: Record<PlanStatus, { label: string; icon: any; color: string; bg: string }> = {
@@ -69,6 +72,12 @@ export default function ActionPlansPage() {
     const [activeTab, setActiveTab] = useState<PlanStatus | 'all'>("pending");
     const [dateFilter, setDateFilter] = useState<string>("");
     const [relativeFilter, setRelativeFilter] = useState<string>("all");
+    const [userFilter, setUserFilter] = useState<string>("me");
+    const [sectorFilter, setSectorFilter] = useState<string>("all");
+
+    const [profiles, setProfiles] = useState<{ id: string; name: string }[]>([]);
+    const [sectors, setSectors] = useState<{ id: string; name: string }[]>([]);
+    const [isAdmin, setIsAdmin] = useState(false);
 
     // Resolution Modal State
     const [resolvingPlanId, setResolvingPlanId] = useState<string | null>(null);
@@ -89,14 +98,36 @@ export default function ActionPlansPage() {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) return;
 
-            const { data, error } = await supabase
-                .from('action_plans')
-                .select('*')
-                .eq('assignee_id', user.id)
-                .order('created_at', { ascending: false });
+            // Check permissions
+            const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+            const admin = profile?.role === 'admin' || profile?.role === 'owner' || profile?.role === 'manager';
+            setIsAdmin(admin);
+
+            let query = supabase.from('action_plans').select('*, profiles!action_plans_assignee_id_fkey(name)');
+            
+            if (!admin || userFilter === 'me') {
+                query = query.eq('assignee_id', user.id);
+            } else if (userFilter !== 'all') {
+                query = query.eq('assignee_id', userFilter);
+            }
+
+            if (sectorFilter !== 'all') {
+                query = query.eq('sector_id', sectorFilter);
+            }
+
+            const { data, error } = await query.order('created_at', { ascending: false });
 
             if (error) throw error;
             setPlans(data || []);
+
+            if (admin) {
+                const [{ data: pData }, { data: sData }] = await Promise.all([
+                    supabase.from('profiles').select('id, name'),
+                    supabase.from('sectors').select('id, name')
+                ]);
+                if (pData) setProfiles(pData);
+                if (sData) setSectors(sData);
+            }
         } catch (err) {
             console.error("Erro ao buscar planos:", err);
         } finally {
@@ -106,7 +137,7 @@ export default function ActionPlansPage() {
 
     useEffect(() => {
         fetchPlans();
-    }, [supabase]);
+    }, [supabase, userFilter, sectorFilter]);
 
     const filteredPlans = useMemo(() => {
         return plans.filter(p => {
@@ -208,14 +239,14 @@ export default function ActionPlansPage() {
             </div>
 
             {/* Filters Bar */}
-            <div className="bg-white dark:bg-zinc-900 p-2 rounded-2xl border border-zinc-100 dark:border-zinc-800 flex flex-col md:flex-row gap-4 items-center">
-                <div className="flex bg-zinc-50 dark:bg-zinc-950 p-1 rounded-xl w-full md:w-auto overflow-x-auto scrollbar-none">
+            <div className="bg-white dark:bg-zinc-900 p-2 rounded-2xl border border-zinc-100 dark:border-zinc-800 flex flex-col gap-4">
+                <div className="flex bg-zinc-50 dark:bg-zinc-950 p-1 rounded-xl w-full overflow-x-auto scrollbar-none">
                     {(['all', 'pending', 'in_progress', 'resolved', 'canceled'] as const).map((s) => (
                         <button
                             key={s}
                             onClick={() => setActiveTab(s)}
                             className={cn(
-                                "px-4 py-2 rounded-lg text-[10px] font-black transition-all uppercase tracking-wider whitespace-nowrap",
+                                "flex-1 px-4 py-2 rounded-lg text-[10px] font-black transition-all uppercase tracking-wider whitespace-nowrap",
                                 activeTab === s 
                                     ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-sm" 
                                     : "text-zinc-400 hover:text-zinc-600"
@@ -226,25 +257,57 @@ export default function ActionPlansPage() {
                     ))}
                 </div>
 
-                <div className="flex items-center gap-3 w-full md:w-auto ml-auto pr-2">
-                    <div className="relative flex-1 md:w-40">
+                <div className="flex flex-wrap items-center gap-3 w-full p-1">
+                    {isAdmin && (
+                        <>
+                            <div className="relative flex-1 min-w-[150px]">
+                                <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
+                                <select 
+                                    value={userFilter}
+                                    onChange={(e) => setUserFilter(e.target.value)}
+                                    className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-xl pl-9 pr-3 py-2.5 text-xs focus:ring-2 focus:ring-orange-500 outline-none appearance-none font-bold text-zinc-600 dark:text-zinc-400"
+                                >
+                                    <option value="me">Meus Planos</option>
+                                    <option value="all">Todos os Usuários</option>
+                                    {profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                </select>
+                            </div>
+
+                            <div className="relative flex-1 min-w-[150px]">
+                                <Layers className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
+                                <select 
+                                    value={sectorFilter}
+                                    onChange={(e) => setSectorFilter(e.target.value)}
+                                    className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-xl pl-9 pr-3 py-2.5 text-xs focus:ring-2 focus:ring-orange-500 outline-none appearance-none font-bold text-zinc-600 dark:text-zinc-400"
+                                >
+                                    <option value="all">Todos os Setores</option>
+                                    {sectors.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                </select>
+                            </div>
+                        </>
+                    )}
+
+                    <div className="relative flex-1 min-w-[150px]">
                         <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
                         <input 
                             type="date" 
                             value={dateFilter}
                             onChange={(e) => { setDateFilter(e.target.value); setRelativeFilter('all'); }}
-                            className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-xl pl-9 pr-3 py-2 text-xs focus:ring-2 focus:ring-orange-500 outline-none"
+                            className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-xl pl-9 pr-3 py-2.5 text-xs focus:ring-2 focus:ring-orange-500 outline-none font-bold text-zinc-600 dark:text-zinc-400"
                         />
                     </div>
-                    <select 
-                        value={relativeFilter}
-                        onChange={(e) => { setRelativeFilter(e.target.value); setDateFilter(''); }}
-                        className="bg-zinc-50 dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-orange-500 outline-none"
-                    >
-                        <option value="all">Todas as Datas</option>
-                        <option value="today">Hoje</option>
-                        <option value="week">Últimos 7 dias</option>
-                    </select>
+                    
+                    <div className="relative flex-1 min-w-[120px]">
+                        <select 
+                            value={relativeFilter}
+                            onChange={(e) => { setRelativeFilter(e.target.value); setDateFilter(''); }}
+                            className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-orange-500 outline-none appearance-none font-bold text-zinc-600 dark:text-zinc-400 text-center"
+                        >
+                            <option value="all">Datas</option>
+                            <option value="today">Hoje</option>
+                            <option value="week">Últimos 7 dias</option>
+                        </select>
+                    </div>
                 </div>
             </div>
 
@@ -266,10 +329,10 @@ export default function ActionPlansPage() {
                     <p className="font-bold uppercase tracking-widest text-xs">Sincronizando...</p>
                 </div>
             ) : filteredPlans.length === 0 ? (
-                <div className="flex flex-col items-center justify-center p-12 text-zinc-500 bg-white dark:bg-zinc-950 rounded-[2.5rem] border border-dashed border-zinc-200 dark:border-zinc-800">
+                <div className="flex flex-col items-center justify-center p-12 text-zinc-500 bg-white dark:bg-zinc-950 rounded-[2.5rem] border border-dashed border-zinc-200 dark:border-zinc-800 shadow-inner">
                     <CheckCircle2 className="w-12 h-12 mb-4 text-emerald-500/50" />
-                    <p className="font-bold">Nenhum plano encontrado!</p>
-                    <p className="text-sm">Tudo em conformidade nesta visualização.</p>
+                    <p className="font-bold text-zinc-900 dark:text-zinc-50">Nenhum plano encontrado!</p>
+                    <p className="text-sm">Tente ajustar os filtros ou abas.</p>
                 </div>
             ) : (
                 <motion.div
@@ -287,7 +350,7 @@ export default function ActionPlansPage() {
                             <motion.div
                                 key={plan.id}
                                 variants={itemVariants}
-                                className="bg-white dark:bg-zinc-950 rounded-[2rem] border border-zinc-100 dark:border-zinc-900 overflow-hidden hover:shadow-xl transition-all"
+                                className="bg-white dark:bg-zinc-950 rounded-[2rem] border border-zinc-100 dark:border-zinc-900 overflow-hidden hover:shadow-xl transition-all shadow-sm"
                             >
                                 {/* Header */}
                                 <div
@@ -302,9 +365,15 @@ export default function ActionPlansPage() {
                                             <h3 className="font-bold text-zinc-900 dark:text-zinc-50">{plan.title}</h3>
                                             {plan.priority === 'high' && <span className="bg-rose-100 dark:bg-rose-900/50 text-rose-600 dark:text-rose-400 text-[8px] font-black px-1.5 py-0.5 rounded uppercase">Urgente</span>}
                                         </div>
-                                        <p className="text-xs text-zinc-500 mt-1 line-clamp-1">
-                                            {plan.description || "Sem descrição"}
-                                        </p>
+                                        <div className="flex items-center gap-3 mt-1">
+                                            <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                                                <UserIcon className="w-3 h-3" /> {plan.profiles?.name || "Sem atribuição"}
+                                            </p>
+                                            <span className="w-1 h-1 rounded-full bg-zinc-300 dark:bg-zinc-700" />
+                                            <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                                                <Calendar className="w-3 h-3" /> {new Date(plan.created_at).toLocaleDateString("pt-BR")}
+                                            </p>
+                                        </div>
                                     </div>
                                     <div className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider", status.bg, status.color)}>
                                         <StatusIcon className={cn("w-3.5 h-3.5", plan.status === "in_progress" && "animate-spin")} />
@@ -365,7 +434,7 @@ export default function ActionPlansPage() {
 
                                                 {/* Exibição das Evidências (Se Resolvido) */}
                                                 {plan.status === 'resolved' && (
-                                                    <div className="p-5 bg-emerald-50/30 dark:bg-emerald-950/10 rounded-2xl border border-emerald-100 dark:border-emerald-900/30 space-y-4">
+                                                    <div className="p-5 bg-emerald-50/30 dark:bg-emerald-950/10 rounded-2xl border border-emerald-100 dark:border-emerald-900/30 space-y-4 shadow-inner">
                                                         <h4 className="text-[10px] font-black tracking-widest text-emerald-600 dark:text-emerald-400 uppercase">Resultado da Resolução</h4>
                                                         
                                                         {plan.closing_comment && (
@@ -374,19 +443,19 @@ export default function ActionPlansPage() {
 
                                                         <div className="flex gap-4">
                                                             {plan.photo_url && (
-                                                                <a href={plan.photo_url} target="_blank" rel="noreferrer" className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-zinc-800 rounded-xl text-[10px] font-bold text-zinc-600 dark:text-zinc-400 border border-zinc-100 dark:border-zinc-700 shadow-sm">
+                                                                <a href={plan.photo_url} target="_blank" rel="noreferrer" className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-zinc-800 rounded-xl text-[10px] font-bold text-zinc-600 dark:text-zinc-400 border border-zinc-100 dark:border-zinc-700 shadow-sm transition-transform hover:scale-105">
                                                                     <Camera className="w-3.5 h-3.5 text-emerald-500" /> Ver Foto
                                                                 </a>
                                                             )}
                                                             {plan.file_url && (
-                                                                <a href={plan.file_url} target="_blank" rel="noreferrer" className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-zinc-800 rounded-xl text-[10px] font-bold text-zinc-600 dark:text-zinc-400 border border-zinc-100 dark:border-zinc-700 shadow-sm">
+                                                                <a href={plan.file_url} target="_blank" rel="noreferrer" className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-zinc-800 rounded-xl text-[10px] font-bold text-zinc-600 dark:text-zinc-400 border border-zinc-100 dark:border-zinc-700 shadow-sm transition-transform hover:scale-105">
                                                                     <Paperclip className="w-3.5 h-3.5 text-indigo-500" /> Ver Anexo
                                                                 </a>
                                                             )}
                                                         </div>
 
                                                         {plan.satisfaction_rating && (
-                                                            <div className="flex gap-1">
+                                                            <div className="flex gap-1 pt-2">
                                                                 {[1,2,3,4,5].map(s => (
                                                                     <Star key={s} className={cn("w-4 h-4", s <= plan.satisfaction_rating! ? "fill-amber-400 text-amber-400" : "text-zinc-200 dark:text-zinc-800")} />
                                                                 ))}
@@ -465,7 +534,7 @@ export default function ActionPlansPage() {
                                                                     <div>
                                                                         <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-2 text-center">Anexar Arquivo</label>
                                                                         <label className="cursor-pointer flex flex-col items-center justify-center p-5 bg-white dark:bg-zinc-950 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl hover:border-emerald-500 hover:bg-emerald-50/10 transition-all">
-                                                                            {resolutionData.file_url ? <CheckCircle2 className="w-8 h-8 text-emerald-500" /> : <Paperclip className="w-8 h-8 text-zinc-300" />}
+                                                                            {resolutionData.file_url ? <CheckCircle2 className="w-6 h-6 text-emerald-500" /> : <Paperclip className="w-6 h-6 text-zinc-300" />}
                                                                             <span className="text-[10px] mt-2 text-zinc-500 font-bold">{isUploading ? "Enviando..." : resolutionData.file_url ? "Pronto!" : "Docs / PDF / Outros"}</span>
                                                                             <input type="file" className="hidden" onChange={(e) => handleFileUpload(e, 'file')} />
                                                                         </label>

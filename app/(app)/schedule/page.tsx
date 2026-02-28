@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     ChevronLeft,
@@ -12,67 +12,22 @@ import {
     AlertTriangle,
     SkipForward,
     X,
+    Lightbulb,
+    Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ChecklistSchedule } from "@/types";
-
-// Mock schedules
-const mockSchedules: ChecklistSchedule[] = [
-    {
-        id: "s1", template_id: "tpl-1", organization_id: "org-1",
-        assigned_user_id: "u1", title: "Abertura do Restaurante",
-        scheduled_date: "2026-02-26", scheduled_time: "07:00",
-        recurrence: "daily", status: "completed", created_at: "2026-01-01",
-    },
-    {
-        id: "s2", template_id: "tpl-2", organization_id: "org-1",
-        assigned_user_id: "u2", title: "Controle de Qualidade APPCC",
-        scheduled_date: "2026-02-26", scheduled_time: "10:00",
-        recurrence: "daily", status: "pending", created_at: "2026-01-01",
-    },
-    {
-        id: "s3", template_id: "tpl-3", organization_id: "org-1",
-        assigned_user_id: "u1", title: "Fechamento Diário",
-        scheduled_date: "2026-02-26", scheduled_time: "22:00",
-        recurrence: "daily", status: "pending", created_at: "2026-01-01",
-    },
-    {
-        id: "s4", template_id: "tpl-2", organization_id: "org-1",
-        title: "Inspeção Sanitária Mensal",
-        scheduled_date: "2026-02-28", scheduled_time: "09:00",
-        recurrence: "monthly", status: "pending", created_at: "2026-01-01",
-    },
-    {
-        id: "s5", template_id: "tpl-1", organization_id: "org-1",
-        title: "Abertura do Restaurante",
-        scheduled_date: "2026-02-27", scheduled_time: "07:00",
-        recurrence: "daily", status: "pending", created_at: "2026-01-01",
-    },
-    {
-        id: "s6", template_id: "tpl-3", organization_id: "org-1",
-        title: "Treinamento Semanal",
-        scheduled_date: "2026-02-25", scheduled_time: "14:00",
-        recurrence: "weekly", status: "overdue", created_at: "2026-01-01",
-    },
-    {
-        id: "s7", template_id: "tpl-1", organization_id: "org-1",
-        title: "Abertura do Restaurante",
-        scheduled_date: "2026-03-01", scheduled_time: "07:00",
-        recurrence: "daily", status: "pending", created_at: "2026-01-01",
-    },
-    {
-        id: "s8", template_id: "tpl-1", organization_id: "org-1",
-        title: "Limpeza Profunda",
-        scheduled_date: "2026-03-05", scheduled_time: "08:00",
-        recurrence: "none", status: "pending", created_at: "2026-01-01",
-    },
-];
+import { ChecklistSchedule, ActionPlan } from "@/types";
+import { createClient } from "@/lib/supabase/client";
 
 const statusConfig = {
     pending: { label: "Pendente", icon: Clock, color: "text-amber-500", bg: "bg-amber-500", dot: "bg-amber-400" },
     completed: { label: "Concluído", icon: CheckCircle2, color: "text-emerald-500", bg: "bg-emerald-500", dot: "bg-emerald-400" },
     overdue: { label: "Atrasado", icon: AlertTriangle, color: "text-red-500", bg: "bg-red-500", dot: "bg-red-400" },
     skipped: { label: "Pulado", icon: SkipForward, color: "text-zinc-400", bg: "bg-zinc-400", dot: "bg-zinc-400" },
+    // Action Plan styles
+    in_progress: { label: "Em andamento", icon: Loader2, color: "text-blue-500", bg: "bg-blue-500", dot: "bg-blue-400" },
+    resolved: { label: "Resolvido", icon: CheckCircle2, color: "text-emerald-500", bg: "bg-emerald-500", dot: "bg-emerald-400" },
+    canceled: { label: "Cancelado", icon: X, color: "text-zinc-400", bg: "bg-zinc-400", dot: "bg-zinc-400" },
 };
 
 const recurrenceLabel: Record<string, string> = {
@@ -99,16 +54,51 @@ const WEEKDAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
 export default function SchedulePage() {
     const today = new Date();
+    const supabase = createClient();
     const [currentYear, setCurrentYear] = useState(today.getFullYear());
     const [currentMonth, setCurrentMonth] = useState(today.getMonth());
     const [selectedDate, setSelectedDate] = useState<string | null>(
         today.toISOString().substring(0, 10)
     );
     const [showNewModal, setShowNewModal] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
+
+    const [schedules, setSchedules] = useState<ChecklistSchedule[]>([]);
+    const [actionPlans, setActionPlans] = useState<ActionPlan[]>([]);
 
     const daysInMonth = getDaysInMonth(currentYear, currentMonth);
     const firstDay = getFirstDayOfMonth(currentYear, currentMonth);
     const todayStr = today.toISOString().substring(0, 10);
+
+    useEffect(() => {
+        async function fetchData() {
+            setIsLoading(true);
+            try {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (!user) return;
+
+                // Fetch schedules
+                const { data: schedData } = await supabase
+                    .from('checklist_schedules')
+                    .select('*')
+                    .or(`assigned_user_id.eq.${user.id},assigned_user_id.is.null`);
+
+                // Fetch action plans with due date
+                const { data: apData } = await supabase
+                    .from('action_plans')
+                    .select('*')
+                    .not('due_date', 'is', null);
+
+                if (schedData) setSchedules(schedData);
+                if (apData) setActionPlans(apData);
+            } catch (err) {
+                console.error("Erro ao carregar agenda:", err);
+            } finally {
+                setIsLoading(false);
+            }
+        }
+        fetchData();
+    }, [supabase]);
 
     const calendarDays = useMemo(() => {
         const days: { date: string; day: number; isCurrentMonth: boolean; isToday: boolean }[] = [];
@@ -141,16 +131,25 @@ export default function SchedulePage() {
         return days;
     }, [currentYear, currentMonth, daysInMonth, firstDay, todayStr]);
 
-    const schedulesByDate = useMemo(() => {
-        const map: Record<string, ChecklistSchedule[]> = {};
-        mockSchedules.forEach((s) => {
+    const itemsByDate = useMemo(() => {
+        const map: Record<string, { type: 'schedule' | 'action_plan'; data: any }[]> = {};
+        
+        schedules.forEach((s) => {
             if (!map[s.scheduled_date]) map[s.scheduled_date] = [];
-            map[s.scheduled_date].push(s);
+            map[s.scheduled_date].push({ type: 'schedule', data: s });
         });
-        return map;
-    }, []);
 
-    const selectedSchedules = selectedDate ? (schedulesByDate[selectedDate] || []) : [];
+        actionPlans.forEach((ap) => {
+            if (!ap.due_date) return;
+            const dateStr = ap.due_date.substring(0, 10);
+            if (!map[dateStr]) map[dateStr] = [];
+            map[dateStr].push({ type: 'action_plan', data: ap });
+        });
+
+        return map;
+    }, [schedules, actionPlans]);
+
+    const selectedItems = selectedDate ? (itemsByDate[selectedDate] || []) : [];
 
     const prevMonth = () => {
         if (currentMonth === 0) { setCurrentMonth(11); setCurrentYear(currentYear - 1); }
@@ -167,164 +166,178 @@ export default function SchedulePage() {
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+                    <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50 uppercase">
                         Agenda
                     </h1>
-                    <p className="text-zinc-500 dark:text-zinc-400 mt-1">
-                        Planeje e acompanhe seus checklists
+                    <p className="text-zinc-500 dark:text-zinc-400 mt-1 font-medium">
+                        Compromissos e prazos de Planos de Ação
                     </p>
                 </div>
                 <button
                     onClick={() => setShowNewModal(true)}
-                    className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-zinc-900 to-zinc-700 dark:from-zinc-100 dark:to-zinc-300 text-white dark:text-zinc-900 rounded-xl font-semibold hover:shadow-lg transition-all text-sm"
+                    className="flex items-center gap-2 px-5 py-3 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:scale-105 transition-all shadow-lg shadow-zinc-500/20"
                 >
                     <Plus className="w-4 h-4" />
-                    Agendar Checklist
+                    Agendar
                 </button>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Calendar */}
-                <div className="lg:col-span-2 bg-white dark:bg-zinc-950 rounded-2xl border border-zinc-100 dark:border-zinc-900 p-6 shadow-sm">
-                    {/* Month Navigator */}
-                    <div className="flex items-center justify-between mb-6">
-                        <button
-                            onClick={prevMonth}
-                            className="p-2 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
-                        >
-                            <ChevronLeft className="w-5 h-5 text-zinc-500" />
-                        </button>
-                        <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-50">
-                            {MONTH_NAMES[currentMonth]} {currentYear}
-                        </h2>
-                        <button
-                            onClick={nextMonth}
-                            className="p-2 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
-                        >
-                            <ChevronRight className="w-5 h-5 text-zinc-500" />
-                        </button>
-                    </div>
-
-                    {/* Weekday Headers */}
-                    <div className="grid grid-cols-7 gap-1 mb-2">
-                        {WEEKDAYS.map((wd) => (
-                            <div
-                                key={wd}
-                                className="text-center text-xs font-semibold text-zinc-400 dark:text-zinc-500 py-2"
-                            >
-                                {wd}
-                            </div>
-                        ))}
-                    </div>
-
-                    {/* Calendar Grid */}
-                    <div className="grid grid-cols-7 gap-1">
-                        {calendarDays.map((day, i) => {
-                            const daySchedules = schedulesByDate[day.date] || [];
-                            const isSelected = selectedDate === day.date;
-                            const hasOverdue = daySchedules.some((s) => s.status === "overdue");
-                            const hasCompleted = daySchedules.some((s) => s.status === "completed");
-                            const hasPending = daySchedules.some((s) => s.status === "pending");
-
-                            return (
-                                <motion.button
-                                    key={i}
-                                    whileTap={{ scale: 0.95 }}
-                                    onClick={() => setSelectedDate(day.date)}
-                                    className={cn(
-                                        "relative aspect-square rounded-xl flex flex-col items-center justify-center transition-all text-sm",
-                                        !day.isCurrentMonth && "opacity-30",
-                                        day.isToday && !isSelected && "bg-zinc-100 dark:bg-zinc-900 font-bold",
-                                        isSelected
-                                            ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 shadow-lg font-bold"
-                                            : "hover:bg-zinc-50 dark:hover:bg-zinc-900/50",
-                                        day.isCurrentMonth
-                                            ? "text-zinc-900 dark:text-zinc-100"
-                                            : "text-zinc-300 dark:text-zinc-600"
-                                    )}
+                <div className="lg:col-span-2 bg-white dark:bg-zinc-950 rounded-[2.5rem] border border-zinc-100 dark:border-zinc-900 p-6 md:p-8 shadow-sm">
+                    {isLoading ? (
+                        <div className="flex flex-col items-center justify-center py-20">
+                            <Loader2 className="w-8 h-8 animate-spin text-orange-500 mb-4" />
+                            <p className="text-[10px] font-black uppercase text-zinc-400 tracking-widest">Sincronizando Agenda...</p>
+                        </div>
+                    ) : (
+                        <>
+                            {/* Month Navigator */}
+                            <div className="flex items-center justify-between mb-8">
+                                <button
+                                    onClick={prevMonth}
+                                    className="p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
                                 >
-                                    <span>{day.day}</span>
-                                    {/* Dots para indicar agendamentos */}
-                                    {daySchedules.length > 0 && (
-                                        <div className="flex gap-0.5 mt-0.5">
-                                            {hasOverdue && <div className={cn("w-1.5 h-1.5 rounded-full", isSelected ? "bg-red-300" : "bg-red-400")} />}
-                                            {hasPending && <div className={cn("w-1.5 h-1.5 rounded-full", isSelected ? "bg-amber-300" : "bg-amber-400")} />}
-                                            {hasCompleted && <div className={cn("w-1.5 h-1.5 rounded-full", isSelected ? "bg-emerald-300" : "bg-emerald-400")} />}
-                                        </div>
-                                    )}
-                                </motion.button>
-                            );
-                        })}
-                    </div>
+                                    <ChevronLeft className="w-5 h-5 text-zinc-500" />
+                                </button>
+                                <h2 className="text-2xl font-black text-zinc-900 dark:text-zinc-50 uppercase tracking-tighter">
+                                    {MONTH_NAMES[currentMonth]} {currentYear}
+                                </h2>
+                                <button
+                                    onClick={nextMonth}
+                                    className="p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                                >
+                                    <ChevronRight className="w-5 h-5 text-zinc-500" />
+                                </button>
+                            </div>
+
+                            {/* Weekday Headers */}
+                            <div className="grid grid-cols-7 gap-2 mb-4">
+                                {WEEKDAYS.map((wd) => (
+                                    <div
+                                        key={wd}
+                                        className="text-center text-[10px] font-black text-zinc-400 dark:text-zinc-600 uppercase tracking-widest py-2"
+                                    >
+                                        {wd}
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Calendar Grid */}
+                            <div className="grid grid-cols-7 gap-2">
+                                {calendarDays.map((day, i) => {
+                                    const dayItems = itemsByDate[day.date] || [];
+                                    const isSelected = selectedDate === day.date;
+                                    const hasActionPlans = dayItems.some(item => item.type === 'action_plan');
+                                    const hasOverdue = dayItems.some(item => item.type === 'schedule' && item.data.status === 'overdue');
+
+                                    return (
+                                        <motion.button
+                                            key={i}
+                                            whileTap={{ scale: 0.9 }}
+                                            onClick={() => setSelectedDate(day.date)}
+                                            className={cn(
+                                                "relative aspect-square rounded-2xl flex flex-col items-center justify-center transition-all",
+                                                !day.isCurrentMonth && "opacity-20",
+                                                day.isToday && !isSelected && "bg-orange-50 dark:bg-orange-950/30 text-orange-600 font-black",
+                                                isSelected
+                                                    ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 shadow-xl font-black scale-105 z-10"
+                                                    : "hover:bg-zinc-50 dark:hover:bg-zinc-900/50 text-zinc-600 dark:text-zinc-400",
+                                            )}
+                                        >
+                                            <span className="text-sm">{day.day}</span>
+                                            {dayItems.length > 0 && (
+                                                <div className="flex gap-1 mt-1">
+                                                    {hasActionPlans && <div className={cn("w-1.5 h-1.5 rounded-full bg-orange-500", isSelected && "bg-white dark:bg-orange-500")} />}
+                                                    {hasOverdue && <div className={cn("w-1.5 h-1.5 rounded-full bg-red-500", isSelected && "bg-white")} />}
+                                                    {!hasActionPlans && !hasOverdue && <div className={cn("w-1.5 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-700", isSelected && "bg-white")} />}
+                                                </div>
+                                            )}
+                                        </motion.button>
+                                    );
+                                })}
+                            </div>
+                        </>
+                    )}
                 </div>
 
                 {/* Day Detail Panel */}
-                <div className="bg-white dark:bg-zinc-950 rounded-2xl border border-zinc-100 dark:border-zinc-900 p-6 shadow-sm">
-                    <div className="flex items-center gap-2 mb-6">
-                        <CalendarDays className="w-5 h-5 text-zinc-500" />
-                        <h3 className="font-bold text-zinc-900 dark:text-zinc-50">
-                            {selectedDate
-                                ? new Date(selectedDate + "T12:00:00").toLocaleDateString("pt-BR", {
-                                    weekday: "long",
-                                    day: "numeric",
-                                    month: "long",
-                                })
-                                : "Selecione um dia"}
-                        </h3>
+                <div className="bg-white dark:bg-zinc-950 rounded-[2.5rem] border border-zinc-100 dark:border-zinc-900 p-6 md:p-8 shadow-sm flex flex-col">
+                    <div className="flex items-center gap-3 mb-8">
+                        <div className="w-10 h-10 bg-zinc-100 dark:bg-zinc-900 rounded-xl flex items-center justify-center">
+                            <CalendarDays className="w-5 h-5 text-zinc-500" />
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-zinc-900 dark:text-zinc-50 text-lg uppercase tracking-tight">
+                                {selectedDate
+                                    ? new Date(selectedDate + "T12:00:00").toLocaleDateString("pt-BR", {
+                                        day: "numeric",
+                                        month: "long",
+                                    })
+                                    : "Selecione"}
+                            </h3>
+                            <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">
+                                {selectedDate ? new Date(selectedDate + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "long" }) : "Escolha um dia"}
+                            </p>
+                        </div>
                     </div>
 
                     <AnimatePresence mode="wait">
-                        {selectedSchedules.length > 0 ? (
+                        {selectedItems.length > 0 ? (
                             <motion.div
                                 key={selectedDate}
                                 initial={{ opacity: 0, y: 10 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, y: -10 }}
-                                className="space-y-3"
+                                className="space-y-4 flex-1 overflow-y-auto pr-2 custom-scrollbar"
                             >
-                                {selectedSchedules
-                                    .sort((a, b) => (a.scheduled_time || "").localeCompare(b.scheduled_time || ""))
-                                    .map((schedule) => {
-                                        const status = statusConfig[schedule.status];
+                                {selectedItems
+                                    .map((item) => {
+                                        const isActionPlan = item.type === 'action_plan';
+                                        const data = item.data;
+                                        const status = statusConfig[data.status as keyof typeof statusConfig] || statusConfig.pending;
                                         const StatusIcon = status.icon;
 
                                         return (
                                             <motion.div
-                                                key={schedule.id}
+                                                key={`${item.type}-${data.id}`}
                                                 whileHover={{ x: 4 }}
                                                 className={cn(
-                                                    "p-4 rounded-xl border-l-4 bg-zinc-50 dark:bg-zinc-900/50 transition-all cursor-pointer hover:shadow-md",
-                                                    `border-l-${schedule.status === "completed" ? "emerald" : schedule.status === "overdue" ? "red" : "amber"}-500`
+                                                    "p-5 rounded-3xl border-l-4 transition-all cursor-pointer hover:shadow-lg",
+                                                    isActionPlan 
+                                                        ? "bg-orange-50/50 dark:bg-orange-950/10 border-orange-500" 
+                                                        : "bg-zinc-50 dark:bg-zinc-900/50 border-zinc-200 dark:border-zinc-800"
                                                 )}
-                                                style={{
-                                                    borderLeftColor:
-                                                        schedule.status === "completed"
-                                                            ? "#10b981"
-                                                            : schedule.status === "overdue"
-                                                                ? "#ef4444"
-                                                                : "#f59e0b",
-                                                }}
                                             >
-                                                <div className="flex items-start justify-between">
-                                                    <div>
-                                                        <h4 className="font-semibold text-zinc-900 dark:text-zinc-50 text-sm">
-                                                            {schedule.title}
+                                                <div className="flex items-start justify-between gap-4">
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center gap-2 mb-1.5">
+                                                            {isActionPlan ? (
+                                                                <Lightbulb className="w-3 h-3 text-orange-500" />
+                                                            ) : (
+                                                                <CheckCircle2 className="w-3 h-3 text-zinc-400" />
+                                                            )}
+                                                            <span className="text-[8px] font-black uppercase tracking-widest text-zinc-400">
+                                                                {isActionPlan ? "Plano de Ação" : "Checklist"}
+                                                            </span>
+                                                        </div>
+                                                        <h4 className="font-bold text-zinc-900 dark:text-zinc-50 text-sm truncate leading-tight">
+                                                            {data.title}
                                                         </h4>
-                                                        <div className="flex items-center gap-3 mt-1.5">
-                                                            {schedule.scheduled_time && (
-                                                                <span className="flex items-center gap-1 text-xs text-zinc-500">
+                                                        <div className="flex items-center gap-3 mt-2">
+                                                            {data.scheduled_time && (
+                                                                <span className="flex items-center gap-1 text-[10px] font-bold text-zinc-500">
                                                                     <Clock className="w-3 h-3" />
-                                                                    {schedule.scheduled_time}
+                                                                    {data.scheduled_time}
                                                                 </span>
                                                             )}
-                                                            <span className="text-xs text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded-full">
-                                                                {recurrenceLabel[schedule.recurrence || "none"]}
+                                                            <span className="text-[10px] text-zinc-400 bg-white dark:bg-zinc-800 px-2 py-0.5 rounded-full border border-zinc-100 dark:border-zinc-700">
+                                                                {isActionPlan ? "Prazo Final" : recurrenceLabel[data.recurrence || "none"]}
                                                             </span>
                                                         </div>
                                                     </div>
-                                                    <div className={cn("flex items-center gap-1 text-xs font-semibold", status.color)}>
-                                                        <StatusIcon className="w-3.5 h-3.5" />
-                                                        {status.label}
+                                                    <div className={cn("shrink-0 p-2 rounded-full", status.color, "bg-white dark:bg-zinc-900 shadow-sm border border-zinc-100 dark:border-zinc-800")}>
+                                                        <StatusIcon className="w-4 h-4" />
                                                     </div>
                                                 </div>
                                             </motion.div>
@@ -336,113 +349,32 @@ export default function SchedulePage() {
                                 key="empty"
                                 initial={{ opacity: 0 }}
                                 animate={{ opacity: 1 }}
-                                className="text-center py-12"
+                                className="flex-1 flex flex-col items-center justify-center text-center px-6"
                             >
-                                <CalendarDays className="w-12 h-12 text-zinc-200 dark:text-zinc-700 mx-auto mb-3" />
-                                <p className="text-sm text-zinc-400">Nenhum checklist agendado</p>
+                                <div className="w-16 h-16 bg-zinc-50 dark:bg-zinc-900 rounded-full flex items-center justify-center mb-4">
+                                    <CalendarDays className="w-8 h-8 text-zinc-200 dark:text-zinc-800" />
+                                </div>
+                                <p className="text-sm font-bold text-zinc-400">Nenhum compromisso</p>
+                                <p className="text-xs text-zinc-400 mt-1">Selecione outro dia ou agende um novo item.</p>
                             </motion.div>
                         )}
                     </AnimatePresence>
                 </div>
             </div>
 
-            {/* New Schedule Modal */}
+            {/* New Schedule Modal (Simplified) */}
             <AnimatePresence>
                 {showNewModal && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
-                        onClick={() => setShowNewModal(false)}
-                    >
-                        <motion.div
-                            initial={{ scale: 0.9, y: 20 }}
-                            animate={{ scale: 1, y: 0 }}
-                            exit={{ scale: 0.9, y: 20 }}
-                            className="bg-white dark:bg-zinc-950 rounded-2xl p-8 w-full max-w-md shadow-2xl border border-zinc-200 dark:border-zinc-800"
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            <div className="flex items-center justify-between mb-6">
-                                <h3 className="text-xl font-bold text-zinc-900 dark:text-zinc-50">
-                                    Agendar Checklist
-                                </h3>
-                                <button
-                                    onClick={() => setShowNewModal(false)}
-                                    className="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-900"
-                                >
-                                    <X className="w-5 h-5 text-zinc-500" />
-                                </button>
+                    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4">
+                        <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white dark:bg-zinc-950 rounded-[2.5rem] p-8 w-full max-w-md shadow-2xl border border-zinc-100 dark:border-zinc-900">
+                            <div className="flex items-center justify-between mb-8">
+                                <h3 className="text-xl font-black text-zinc-900 dark:text-zinc-50 uppercase tracking-tighter">Novo Agendamento</h3>
+                                <button onClick={() => setShowNewModal(false)} className="p-2 bg-zinc-100 dark:bg-zinc-900 rounded-full"><X className="w-5 h-5 text-zinc-500" /></button>
                             </div>
-
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
-                                        Checklist
-                                    </label>
-                                    <select className="w-full px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500">
-                                        <option>Abertura do Restaurante</option>
-                                        <option>Controle de Qualidade APPCC</option>
-                                        <option>Fechamento Diário</option>
-                                    </select>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div>
-                                        <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
-                                            Data
-                                        </label>
-                                        <input
-                                            type="date"
-                                            defaultValue={selectedDate || todayStr}
-                                            className="w-full px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
-                                            Horário
-                                        </label>
-                                        <input
-                                            type="time"
-                                            className="w-full px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
-                                        Recorrência
-                                    </label>
-                                    <div className="grid grid-cols-4 gap-2">
-                                        {(["none", "daily", "weekly", "monthly"] as const).map((r) => (
-                                            <button
-                                                key={r}
-                                                className="px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors"
-                                            >
-                                                {recurrenceLabel[r]}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
-                                        Responsável (opcional)
-                                    </label>
-                                    <select className="w-full px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500">
-                                        <option value="">Qualquer membro</option>
-                                        <option>Carlos Silva</option>
-                                        <option>Ana Beatriz</option>
-                                        <option>Roberto Santos</option>
-                                    </select>
-                                </div>
-
-                                <button className="w-full py-3 bg-gradient-to-r from-zinc-900 to-zinc-700 dark:from-zinc-100 dark:to-zinc-300 text-white dark:text-zinc-900 rounded-xl font-semibold hover:shadow-lg transition-all text-sm">
-                                    Agendar
-                                </button>
-                            </div>
+                            <p className="text-sm text-zinc-500 mb-6">Funcionalidade de criação de agendamentos em desenvolvimento.</p>
+                            <button onClick={() => setShowNewModal(false)} className="w-full py-4 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl">Fechar</button>
                         </motion.div>
-                    </motion.div>
+                    </div>
                 )}
             </AnimatePresence>
         </div>
