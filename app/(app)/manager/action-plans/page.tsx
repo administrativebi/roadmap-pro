@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { Award, CheckCircle2, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { assignXPToActionPlan } from "@/app/actions/assign-xp";
+import { updateActionPlanStatusAction } from "@/app/actions/update-status";
 
 interface ActionPlan {
     id: string;
@@ -103,33 +104,51 @@ export default function AssignXPPage() {
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-4 bg-zinc-50 dark:bg-zinc-900/50 p-4 rounded-xl w-full md:w-auto">
-                                <div>
-                                    <label className="text-[10px] font-black uppercase text-amber-500 tracking-widest block mb-2">
-                                        XP Concedido
-                                    </label>
-                                    <input 
-                                        type="number" 
-                                        value={xpValue[plan.id] || ''}
-                                        onChange={(e) => setXpValue({...xpValue, [plan.id]: parseInt(e.target.value) || 0})}
-                                        className="w-24 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-center font-bold text-zinc-900 dark:text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                                    />
+                                <div className="flex items-center gap-4 bg-zinc-50 dark:bg-zinc-900/50 p-4 rounded-xl w-full md:w-auto">
+                                    <div>
+                                        <label className="text-[10px] font-black uppercase text-amber-500 tracking-widest block mb-2">
+                                            XP Concedido
+                                        </label>
+                                        <input 
+                                            type="number" 
+                                            value={xpValue[plan.id] || ''}
+                                            onChange={(e) => setXpValue({...xpValue, [plan.id]: parseInt(e.target.value) || 0})}
+                                            className="w-24 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-center font-bold text-zinc-900 dark:text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                                        />
+                                    </div>
+                                    <div className="flex flex-col gap-2">
+                                        <button
+                                            onClick={() => handleAssignXP(plan.id, plan.notion_page_id)}
+                                            disabled={processingId === plan.id}
+                                            className="flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 to-orange-500 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg shadow-orange-500/20 hover:scale-105 transition-all disabled:opacity-50 text-sm"
+                                        >
+                                            {processingId === plan.id ? (
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                            ) : (
+                                                <>
+                                                    <Award className="w-4 h-4" />
+                                                    Conceder
+                                                </>
+                                            )}
+                                        </button>
+                                        <button
+                                            onClick={async () => {
+                                                setProcessingId(plan.id);
+                                                const res = await updateActionPlanStatusAction(plan.id, "in_progress", plan.notion_page_id, { is_returning: true });
+                                                if(res.success) {
+                                                    setPlans(prev => prev.filter(p => p.id !== plan.id));
+                                                } else {
+                                                    alert("Erro ao devolver plano.");
+                                                }
+                                                setProcessingId(null);
+                                            }}
+                                            disabled={processingId === plan.id}
+                                            className="flex items-center justify-center gap-2 bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 px-5 py-2 rounded-xl font-bold hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-all disabled:opacity-50 text-xs"
+                                        >
+                                            Devolver Plano
+                                        </button>
+                                    </div>
                                 </div>
-                                <button
-                                    onClick={() => handleAssignXP(plan.id, plan.notion_page_id)}
-                                    disabled={processingId === plan.id}
-                                    className="flex items-center gap-2 bg-gradient-to-r from-amber-400 to-orange-500 text-white px-5 py-3 rounded-xl font-bold shadow-lg shadow-orange-500/20 hover:scale-105 transition-all disabled:opacity-50"
-                                >
-                                    {processingId === plan.id ? (
-                                        <Loader2 className="w-5 h-5 animate-spin" />
-                                    ) : (
-                                        <>
-                                            <Award className="w-5 h-5" />
-                                            Conceder
-                                        </>
-                                    )}
-                                </button>
-                            </div>
                         </motion.div>
                     ))}
                 </div>

@@ -152,7 +152,16 @@ export async function updateActionPlanXPInNotion(pageId: string, xp: number) {
 /**
  * Atualiza o status de um Plano de Ação no Notion
  */
-export async function updateActionPlanStatusInNotion(pageId: string, statusRaw: "pending" | "in_progress" | "resolved" | "canceled") {
+export async function updateActionPlanStatusInNotion(
+    pageId: string, 
+    statusRaw: "pending" | "in_progress" | "resolved" | "canceled",
+    extraData?: {
+        photo_url?: string;
+        file_url?: string;
+        closing_comment?: string;
+        satisfaction_rating?: number;
+    }
+) {
     if (!process.env.NOTION_API_KEY) return null;
     const notion = getNotionClient();
     
@@ -161,13 +170,28 @@ export async function updateActionPlanStatusInNotion(pageId: string, statusRaw: 
     if (statusRaw === "resolved") notionStatus = "Resolvido";
     if (statusRaw === "canceled") notionStatus = "Cancelado";
 
+    const properties: any = {
+        "Status": {
+            select: { name: notionStatus }
+        }
+    };
+
+    if (extraData?.photo_url) {
+        properties["Foto"] = { url: extraData.photo_url };
+    }
+    if (extraData?.file_url) {
+        properties["Arquivo"] = { url: extraData.file_url };
+    }
+    if (extraData?.closing_comment) {
+        properties["Comentário de Finalização"] = { rich_text: [{ text: { content: extraData.closing_comment } }] };
+    }
+    if (extraData?.satisfaction_rating) {
+        properties["Satisfação"] = { number: extraData.satisfaction_rating };
+    }
+
     return await notion.pages.update({
         page_id: pageId,
-        properties: {
-            "Status": {
-                select: { name: notionStatus }
-            }
-        }
+        properties
     });
 }
 

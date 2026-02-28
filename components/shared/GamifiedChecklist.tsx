@@ -100,13 +100,27 @@ export function GamifiedChecklist({ template, onComplete }: GamifiedChecklistPro
     };
 
     const handleRequestFinish = () => {
-        // Encontrar não-conformidades (respostas negativas em sim/não)
-        const nonConformities = questions.filter(q => {
+        // Encontrar não-conformidades (respostas que acionam a regra 'create_action_plan')
+        const nonConformities: ChecklistQuestion[] = [];
+
+        questions.forEach(q => {
             const resp = responses[q.id];
-            if (!resp) return false;
-            // Considerando "Não" como false no yes_no como não-conformidade padrão
-            if (q.type === 'yes_no' && resp.value === false) return true;
-            return false;
+            if (!resp || !q.conditional_rules) return;
+
+            q.conditional_rules.forEach((rule: any) => {
+                if (rule.action === 'create_action_plan') {
+                    let matches = false;
+                    const valStr = String(resp.value).toLowerCase();
+                    const triggerStr = String(rule.compareValue || rule.triggerAnswer).toLowerCase();
+
+                    if (rule.operator === 'equals' && valStr === triggerStr) matches = true;
+                    if (rule.operator === 'not_equals' && valStr !== triggerStr) matches = true;
+
+                    if (matches) {
+                        nonConformities.push(q);
+                    }
+                }
+            });
         });
 
         if (nonConformities.length > 0) {

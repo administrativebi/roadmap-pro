@@ -65,6 +65,7 @@ export type ChecklistQuestion = {
     min_value?: number;           // Para type number
     max_value?: number;           // Para type number
     points: number;               // Pontos por responder esta pergunta
+    conditional_rules?: any[];    // Regras condicionais (ex: create_action_plan)
 };
 
 // ─── Checklist Template ────────────────────────────────────
@@ -140,6 +141,10 @@ export type ActionPlan = {
     ai_suggestion?: string;
     status: "pending" | "in_progress" | "resolved" | "canceled";
     notion_page_id?: string;
+    photo_url?: string;
+    file_url?: string;
+    closing_comment?: string;
+    satisfaction_rating?: number;
     created_at: string;
     resolved_at?: string;
 };

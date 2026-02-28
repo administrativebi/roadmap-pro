@@ -57,6 +57,16 @@ export default function ActionPlansPage() {
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [aiLoading, setAiLoading] = useState<string | null>(null);
     const [isFormOpen, setIsFormOpen] = useState(false);
+    
+    // Resolution Modal State
+    const [resolvingPlanId, setResolvingPlanId] = useState<string | null>(null);
+    const [resolutionData, setResolutionData] = useState({
+        photo_url: "",
+        file_url: "",
+        closing_comment: "",
+        satisfaction_rating: 5,
+    });
+    
     const supabase = createClient();
 
     const fetchPlans = async () => {
@@ -98,16 +108,29 @@ export default function ActionPlansPage() {
         setAiLoading(null);
     };
 
-    const updateStatus = async (planId: string, newStatus: PlanStatus, notionPageId?: string) => {
+    const updateStatus = async (planId: string, newStatus: PlanStatus, notionPageId?: string, extraData?: any) => {
         try {
-            const result = await updateActionPlanStatusAction(planId, newStatus, notionPageId);
+            // Se for resolved e tiver dados extras, passamos para a server action
+            const result = await updateActionPlanStatusAction(planId, newStatus, notionPageId, extraData);
             if (result.error) throw new Error(result.error);
             
-            setPlans(prev => prev.map(p => p.id === planId ? { ...p, status: newStatus } : p));
+            setPlans(prev => prev.map(p => p.id === planId ? { ...p, status: newStatus, ...extraData } : p));
         } catch (err) {
             console.error("Erro ao atualizar status:", err);
             alert("Erro ao atualizar.");
         }
+    };
+
+    const handleResolveSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!resolvingPlanId) return;
+        
+        const plan = plans.find(p => p.id === resolvingPlanId);
+        if (!plan) return;
+
+        await updateStatus(plan.id, 'resolved', plan.notion_page_id, resolutionData);
+        setResolvingPlanId(null);
+        setResolutionData({ photo_url: "", file_url: "", closing_comment: "", satisfaction_rating: 5 });
     };
 
     return (
@@ -286,7 +309,10 @@ export default function ActionPlansPage() {
                                                     <div className="flex gap-2">
                                                         {plan.status !== 'resolved' && plan.status !== 'canceled' && (
                                                             <button
-                                                                onClick={() => updateStatus(plan.id, 'resolved', plan.notion_page_id)}
+                                                                onClick={() => {
+                                                                    setResolvingPlanId(plan.id);
+                                                                    setExpandedId(plan.id); // keeps expanded
+                                                                }}
                                                                 className="px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-black uppercase hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-500/20"
                                                             >
                                                                 Resolver
@@ -302,6 +328,90 @@ export default function ActionPlansPage() {
                                                         )}
                                                     </div>
                                                 </div>
+
+                                                {/* Resolution Form Form */}
+                                                <AnimatePresence>
+                                                    {resolvingPlanId === plan.id && (
+                                                        <motion.div
+                                                            initial={{ height: 0, opacity: 0 }}
+                                                            animate={{ height: "auto", opacity: 1 }}
+                                                            exit={{ height: 0, opacity: 0 }}
+                                                            className="overflow-hidden"
+                                                        >
+                                                            <div className="mt-4 p-5 bg-zinc-100 dark:bg-zinc-900 rounded-2xl border border-emerald-100 dark:border-emerald-900/30 space-y-4">
+                                                                <h4 className="text-sm font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-2">
+                                                                    <CheckCircle2 className="w-4 h-4" />
+                                                                    Finalizar Plano de Ação
+                                                                </h4>
+                                                                
+                                                                <div>
+                                                                    <label className="block text-xs font-bold text-zinc-500 mb-1">Comentário de Finalização</label>
+                                                                    <textarea
+                                                                        value={resolutionData.closing_comment}
+                                                                        onChange={e => setResolutionData({...resolutionData, closing_comment: e.target.value})}
+                                                                        rows={3}
+                                                                        placeholder="Descreva o que foi feito..."
+                                                                        className="w-full bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                                                                    />
+                                                                </div>
+
+                                                                <div className="grid grid-cols-2 gap-4">
+                                                                    <div>
+                                                                        <label className="block text-xs font-bold text-zinc-500 mb-1">Anexar Foto (URL provisória)</label>
+                                                                        <input
+                                                                            type="text"
+                                                                            value={resolutionData.photo_url}
+                                                                            onChange={e => setResolutionData({...resolutionData, photo_url: e.target.value})}
+                                                                            placeholder="https://..."
+                                                                            className="w-full bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                                                                        />
+                                                                    </div>
+                                                                    <div>
+                                                                        <label className="block text-xs font-bold text-zinc-500 mb-1">Anexar Arquivo (URL provisória)</label>
+                                                                        <input
+                                                                            type="text"
+                                                                            value={resolutionData.file_url}
+                                                                            onChange={e => setResolutionData({...resolutionData, file_url: e.target.value})}
+                                                                            placeholder="https://..."
+                                                                            className="w-full bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                                                                        />
+                                                                    </div>
+                                                                </div>
+
+                                                                <div>
+                                                                    <label className="block text-xs font-bold text-zinc-500 mb-1">Satisfação com o Resultado</label>
+                                                                    <div className="flex gap-2">
+                                                                        {[1,2,3,4,5].map(star => (
+                                                                            <button
+                                                                                key={star}
+                                                                                onClick={() => setResolutionData({...resolutionData, satisfaction_rating: star})}
+                                                                                className={cn("text-2xl transition-transform hover:scale-110", star <= resolutionData.satisfaction_rating ? "text-amber-400" : "text-zinc-300 dark:text-zinc-700")}
+                                                                            >
+                                                                                ★
+                                                                            </button>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="flex justify-end gap-2 pt-2">
+                                                                    <button
+                                                                        onClick={() => setResolvingPlanId(null)}
+                                                                        className="px-4 py-2 text-xs font-bold text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+                                                                    >
+                                                                        Cancelar
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={handleResolveSubmit}
+                                                                        className="px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-black uppercase hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-500/20 flex items-center gap-2"
+                                                                    >
+                                                                        <CheckCircle2 className="w-4 h-4" />
+                                                                        Confirmar Resolução
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        </motion.div>
+                                                    )}
+                                                </AnimatePresence>
                                             </div>
                                         </motion.div>
                                     )}
