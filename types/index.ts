@@ -66,6 +66,13 @@ export type ChecklistQuestion = {
     max_value?: number;           // Para type number
     points: number;               // Pontos por responder esta pergunta
     conditional_rules?: any[];    // Regras condicionais (ex: create_action_plan)
+    parsedSection?: {
+        id: string;
+        title: string;
+        icon?: string;
+        color?: string;
+        order: number;
+    };
 };
 
 // ─── Checklist Template ────────────────────────────────────
