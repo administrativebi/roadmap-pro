@@ -44,9 +44,38 @@ export default function ChecklistExecutionPage() {
 
                 if (qError) throw qError;
 
+                const parsedQuestions = (qData || []).map((q: any) => {
+                    let parsedSection: any = { id: "default", title: "Geral", order: 0 };
+                    try {
+                        if (q.section) {
+                            const raw = typeof q.section === 'string' ? JSON.parse(q.section) : q.section;
+                            if (typeof raw === 'object' && raw !== null) {
+                                parsedSection = {
+                                    id: raw.id || String(raw.title || "unknown"),
+                                    title: raw.title || "Seção",
+                                    icon: raw.icon,
+                                    color: raw.color,
+                                    order: raw.order ?? 0,
+                                };
+                            }
+                        }
+                    } catch (e) {
+                        parsedSection = { id: String(q.section), title: String(q.section), order: 0 };
+                    }
+
+                    return {
+                        ...q,
+                        parsedSection,
+                        properties: q.properties || [q.type],
+                        option_items: q.option_items || [],
+                        conditional_rules: q.conditional_rules || [],
+                        media_instructions: q.media_instructions || []
+                    };
+                });
+
                 const fullTemplate: ChecklistTemplate = {
                     ...tplData,
-                    questions: qData || [],
+                    questions: parsedQuestions,
                 };
                 
                 setTemplate(fullTemplate);
