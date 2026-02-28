@@ -111,6 +111,7 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
                 enabled: false, recurrence: "none", days_of_week: [],
                 day_of_month: null, start_date: "", end_date: "",
                 deadline_time: "", notify_before_minutes: 60, auto_create: true,
+                skip_holidays: false
             });
             setCurrentTemplateDbId(null);
             return;
@@ -274,11 +275,10 @@ export function ChecklistBuilder({ templateId, onSave }: { templateId?: string |
         setTemplateName("");
         setSectorId("");
         setScheduleConfig({
-            type: 'daily',
-            days: [],
-            time: '08:00',
-            deadline_time: '19:00',
-            start_date: new Date().toISOString().split('T')[0]
+            enabled: false, recurrence: "none", days_of_week: [],
+            day_of_month: null, start_date: new Date().toISOString().split('T')[0], end_date: "",
+            deadline_time: "19:00", notify_before_minutes: 60, auto_create: true,
+            skip_holidays: false
         });
         setSections([{
             id: generateId(),

@@ -11,10 +11,22 @@ interface ActionPlanFormProps {
     checklistResponseId?: string; // Opcional, usado quando gerado dentro de um checklist
 }
 
+interface UserProfile {
+    id: string;
+    name: string;
+    notion_page_id?: string;
+}
+
+interface SectorInfo {
+    id: string;
+    name: string;
+    notion_page_id?: string;
+}
+
 export function ActionPlanForm({ onClose, onSuccess, checklistResponseId }: ActionPlanFormProps) {
     const [isLoading, setIsLoading] = useState(false);
-    const [profiles, setProfiles] = useState<Record<string, unknown>[]>([]);
-    const [sectors, setSectors] = useState<Record<string, unknown>[]>([]);
+    const [profiles, setProfiles] = useState<UserProfile[]>([]);
+    const [sectors, setSectors] = useState<SectorInfo[]>([]);
     const supabase = createClient();
 
     const [formData, setFormData] = useState({

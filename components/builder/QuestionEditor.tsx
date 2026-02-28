@@ -66,7 +66,7 @@ export function QuestionEditor({ sections, questionId, onUpdate, onClose }: Ques
         }
         // Set primary type as the first non-photo property, or first property
         const primaryType = current.find(p => p !== "photo") || current[0];
-        update({ properties: current, type: primaryType });
+        update({ properties: current, type: primaryType as QuestionType });
     };
 
     // --- Conditional Rules ---
