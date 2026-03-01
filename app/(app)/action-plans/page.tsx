@@ -436,7 +436,7 @@ export default function ActionPlansPage() {
                                                                     </div>
                                                                 )}
 
-                                                                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-zinc-50 dark:border-zinc-800/50">
+                                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-zinc-50 dark:border-zinc-800/50">
                                                                     <div>
                                                                         <h4 className="text-[10px] font-black tracking-widest text-zinc-400 uppercase">Custo Estimado</h4>
                                                                         <p className="text-sm text-zinc-800 dark:text-zinc-200 mt-1 font-medium">
@@ -542,7 +542,7 @@ export default function ActionPlansPage() {
                                                                                 />
                                                                             </div>
 
-                                                                            <div className="grid grid-cols-2 gap-4">
+                                                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                                                                 <div>
                                                                                     <label className="block text-[10px] font-black text-zinc-500 mb-2 uppercase tracking-widest text-center">Anexar Foto</label>
                                                                                     <label className="cursor-pointer flex flex-col items-center justify-center p-5 bg-white dark:bg-zinc-950 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl hover:border-emerald-500 hover:bg-emerald-50/10 transition-all">

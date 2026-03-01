@@ -126,25 +126,25 @@ export function ActionPlanForm({ onClose, onSuccess, checklistResponseId, initia
                         
                         <div>
                             <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">1. Qual é a tarefa ou problema? *</label>
-                            <input required type="text" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-orange-500 focus:outline-none" placeholder="Ex: Consertar vedação da geladeira 02" />
+                            <input required type="text" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-900 dark:text-zinc-50 focus:ring-2 focus:ring-orange-500 focus:outline-none" placeholder="Ex: Consertar vedação da geladeira 02" />
                         </div>
 
                         <div>
                             <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">2. Qual o benefício de solucionar?</label>
-                            <textarea value={formData.benefit} onChange={e => setFormData({...formData, benefit: e.target.value})} rows={2} className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-orange-500 focus:outline-none" placeholder="Ex: Evitar perda de alimentos e desperdício de energia" />
+                            <textarea value={formData.benefit} onChange={e => setFormData({...formData, benefit: e.target.value})} rows={2} className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-900 dark:text-zinc-50 focus:ring-2 focus:ring-orange-500 focus:outline-none" placeholder="Ex: Evitar perda de alimentos e desperdício de energia" />
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                             <div>
                                 <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">3. Quem vai fazer?</label>
-                                <select value={formData.assignee_id} onChange={e => setFormData({...formData, assignee_id: e.target.value})} className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-orange-500 focus:outline-none">
+                                <select value={formData.assignee_id} onChange={e => setFormData({...formData, assignee_id: e.target.value})} className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-900 dark:text-zinc-50 focus:ring-2 focus:ring-orange-500 focus:outline-none">
                                     <option value="">Selecione um responsável...</option>
                                     {profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                                 </select>
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">4. Em que setor?</label>
-                                <select value={formData.sector_id} onChange={e => setFormData({...formData, sector_id: e.target.value})} className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-orange-500 focus:outline-none">
+                                <select value={formData.sector_id} onChange={e => setFormData({...formData, sector_id: e.target.value})} className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-900 dark:text-zinc-50 focus:ring-2 focus:ring-orange-500 focus:outline-none">
                                     <option value="">Selecione o setor...</option>
                                     {sectors.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                                 </select>
@@ -154,11 +154,11 @@ export function ActionPlanForm({ onClose, onSuccess, checklistResponseId, initia
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                             <div>
                                 <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">5. Qual o prazo final?</label>
-                                <input type="date" value={formData.due_date} onChange={e => setFormData({...formData, due_date: e.target.value})} className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-orange-500 focus:outline-none" />
+                                <input type="date" value={formData.due_date} onChange={e => setFormData({...formData, due_date: e.target.value})} className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-900 dark:text-zinc-50 focus:ring-2 focus:ring-orange-500 focus:outline-none" />
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">6. Custos envolvidos?</label>
-                                <select value={formData.cost_type} onChange={e => setFormData({...formData, cost_type: e.target.value})} className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-orange-500 focus:outline-none">
+                                <select value={formData.cost_type} onChange={e => setFormData({...formData, cost_type: e.target.value})} className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-900 dark:text-zinc-50 focus:ring-2 focus:ring-orange-500 focus:outline-none">
                                     <option value="apenas_tempo">Apenas Tempo / Esforço</option>
                                     <option value="dinheiro">Requer Dinheiro / Investimento</option>
                                 </select>
@@ -167,7 +167,7 @@ export function ActionPlanForm({ onClose, onSuccess, checklistResponseId, initia
 
                         <div>
                             <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">7. Qual o passo a passo básico?</label>
-                            <textarea value={formData.step_by_step} onChange={e => setFormData({...formData, step_by_step: e.target.value})} rows={3} className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-orange-500 focus:outline-none" placeholder="1. Ligar para o técnico&#10;2. Esvaziar a geladeira..." />
+                            <textarea value={formData.step_by_step} onChange={e => setFormData({...formData, step_by_step: e.target.value})} rows={3} className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-900 dark:text-zinc-50 focus:ring-2 focus:ring-orange-500 focus:outline-none" placeholder="1. Ligar para o técnico&#10;2. Esvaziar a geladeira..." />
                         </div>
                     </form>
                 </div>
