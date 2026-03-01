@@ -65,6 +65,7 @@ export default function SchedulePage() {
 
     const [schedules, setSchedules] = useState<ChecklistSchedule[]>([]);
     const [actionPlans, setActionPlans] = useState<ActionPlan[]>([]);
+    const [selectedItem, setSelectedItem] = useState<{ type: 'schedule' | 'action_plan', data: any } | null>(null);
 
     const daysInMonth = getDaysInMonth(currentYear, currentMonth);
     const firstDay = getFirstDayOfMonth(currentYear, currentMonth);
@@ -86,7 +87,7 @@ export default function SchedulePage() {
                 // Fetch action plans with due date
                 const { data: apData } = await supabase
                     .from('action_plans')
-                    .select('*')
+                    .select('*, profiles!action_plans_assignee_id_fkey(name), sectors(name)')
                     .not('due_date', 'is', null);
 
                 if (schedData) setSchedules(schedData);
@@ -302,6 +303,7 @@ export default function SchedulePage() {
                                             <motion.div
                                                 key={`${item.type}-${data.id}`}
                                                 whileHover={{ x: 4 }}
+                                                onClick={() => setSelectedItem(item)}
                                                 className={cn(
                                                     "p-5 rounded-3xl border-l-4 transition-all cursor-pointer hover:shadow-lg",
                                                     isActionPlan 
@@ -361,6 +363,92 @@ export default function SchedulePage() {
                     </AnimatePresence>
                 </div>
             </div>
+
+            {/* Detail Modal */}
+            <AnimatePresence>
+                {selectedItem && (
+                    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4">
+                        <motion.div 
+                            initial={{ scale: 0.9, opacity: 0 }} 
+                            animate={{ scale: 1, opacity: 1 }} 
+                            exit={{ scale: 0.9, opacity: 0 }}
+                            className="bg-white dark:bg-zinc-950 rounded-[2.5rem] p-8 w-full max-w-lg shadow-2xl border border-zinc-100 dark:border-zinc-900 overflow-hidden relative"
+                        >
+                            <button 
+                                onClick={() => setSelectedItem(null)} 
+                                className="absolute top-6 right-6 p-2 bg-zinc-100 dark:bg-zinc-900 rounded-full hover:bg-zinc-200 transition-colors"
+                            >
+                                <X className="w-5 h-5 text-zinc-500" />
+                            </button>
+
+                            <div className="flex items-center gap-3 mb-8">
+                                <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center text-2xl", selectedItem.type === 'action_plan' ? "bg-orange-100 text-orange-500" : "bg-zinc-100 text-zinc-500")}>
+                                    {selectedItem.type === 'action_plan' ? "💡" : "📋"}
+                                </div>
+                                <div>
+                                    <h3 className="text-xl font-black text-zinc-900 dark:text-zinc-50 uppercase tracking-tighter">
+                                        {selectedItem.type === 'action_plan' ? "Plano de Ação" : "Checklist Agendado"}
+                                    </h3>
+                                    <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">
+                                        Detalhes do Compromisso
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="space-y-6 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+                                <div>
+                                    <label className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.2em] mb-1 block">Título</label>
+                                    <p className="text-lg font-bold text-zinc-900 dark:text-zinc-50">{selectedItem.data.title}</p>
+                                </div>
+
+                                {selectedItem.type === 'action_plan' ? (
+                                    <>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.2em] mb-1 block">Responsável</label>
+                                                <p className="text-sm font-bold text-zinc-700 dark:text-zinc-300">👤 {selectedItem.data.profiles?.name || "Sem atribuição"}</p>
+                                            </div>
+                                            <div>
+                                                <label className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.2em] mb-1 block">Setor</label>
+                                                <p className="text-sm font-bold text-zinc-700 dark:text-zinc-300">📍 {selectedItem.data.sectors?.name || "Geral"}</p>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.2em] mb-1 block">Prazo Final</label>
+                                            <div className="flex items-center gap-2 text-rose-500 font-bold">
+                                                <CalendarDays className="w-4 h-4" />
+                                                {new Date(selectedItem.data.due_date).toLocaleDateString("pt-BR")}
+                                            </div>
+                                        </div>
+                                        <div className="p-4 bg-zinc-50 dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800">
+                                            <label className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.2em] mb-2 block">O que deve ser feito</label>
+                                            <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed whitespace-pre-line italic">
+                                                {selectedItem.data.step_by_step || selectedItem.data.description || "Sem instruções detalhadas."}
+                                            </p>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div>
+                                        <label className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.2em] mb-1 block">Agendado para</label>
+                                        <p className="text-sm font-bold text-zinc-700 dark:text-zinc-300">
+                                            {new Date(selectedItem.data.scheduled_date + "T12:00:00").toLocaleDateString("pt-BR")} às {selectedItem.data.scheduled_time}
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="mt-8 pt-6 border-t border-zinc-100 dark:border-zinc-900">
+                                <button 
+                                    onClick={() => setSelectedItem(null)} 
+                                    className="w-full py-4 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl active:scale-95 transition-all"
+                                >
+                                    Entendido
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
 
             {/* New Schedule Modal (Simplified) */}
             <AnimatePresence>

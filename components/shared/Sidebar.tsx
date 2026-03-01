@@ -53,6 +53,7 @@ const navItems = [
         label: "Planos de Ação",
         icon: Lightbulb,
         children: [
+            { href: "/action-plans/dashboard", label: "Dashboard", icon: BarChart3, adminOnly: true },
             { href: "/action-plans", label: "Meus Planos", icon: Lightbulb },
             { href: "/manager/action-plans", label: "Definir Pontuação", icon: Award, adminOnly: true },
         ]

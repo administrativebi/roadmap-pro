@@ -43,6 +43,7 @@ interface ActionPlan {
     closing_comment?: string;
     satisfaction_rating?: number;
     profiles?: { name: string } | null;
+    sectors?: { name: string } | null;
 }
 
 const statusConfig: Record<PlanStatus, { label: string; icon: any; color: string; bg: string }> = {
@@ -103,7 +104,7 @@ export default function ActionPlansPage() {
             const admin = profile?.role === 'admin' || profile?.role === 'owner' || profile?.role === 'manager';
             setIsAdmin(admin);
 
-            let query = supabase.from('action_plans').select('*, profiles!action_plans_assignee_id_fkey(name)');
+            let query = supabase.from('action_plans').select('*, profiles!action_plans_assignee_id_fkey(name), sectors(name)');
             
             if (!admin || userFilter === 'me') {
                 query = query.eq('assignee_id', user.id);
@@ -162,6 +163,16 @@ export default function ActionPlansPage() {
         });
     }, [plans, activeTab, dateFilter, relativeFilter]);
 
+    const plansBySector = useMemo(() => {
+        const grouped: Record<string, ActionPlan[]> = {};
+        filteredPlans.forEach(plan => {
+            const sectorName = plan.sectors?.name || "Sem Setor";
+            if (!grouped[sectorName]) grouped[sectorName] = [];
+            grouped[sectorName].push(plan);
+        });
+        return grouped;
+    }, [filteredPlans]);
+
     const updateStatus = async (planId: string, newStatus: PlanStatus, notionPageId?: string, extraData?: any) => {
         try {
             const result = await updateActionPlanStatusAction(planId, newStatus, notionPageId, extraData);
@@ -184,13 +195,13 @@ export default function ActionPlansPage() {
             const filePath = `action-plans/${fileName}`;
 
             const { error: uploadError } = await supabase.storage
-                .from('checklist-photos')
+                .from('public')
                 .upload(filePath, file);
 
             if (uploadError) throw uploadError;
 
             const { data: { publicUrl } } = supabase.storage
-                .from('checklist-photos')
+                .from('public')
                 .getPublicUrl(filePath);
 
             setResolutionData(prev => ({
@@ -335,250 +346,262 @@ export default function ActionPlansPage() {
                     <p className="text-sm">Tente ajustar os filtros ou abas.</p>
                 </div>
             ) : (
-                <motion.div
-                    variants={containerVariants}
-                    initial="hidden"
-                    animate="visible"
-                    className="space-y-4 max-w-3xl"
-                >
-                    {filteredPlans.map((plan) => {
-                        const status = statusConfig[plan.status || 'pending'];
-                        const StatusIcon = status.icon;
-                        const isExpanded = expandedId === plan.id;
+                <div className="space-y-12 pb-20">
+                    {Object.entries(plansBySector).map(([sectorName, items]) => (
+                        <div key={sectorName} className="space-y-6">
+                            <div className="flex items-center gap-3">
+                                <div className="h-px flex-1 bg-zinc-100 dark:bg-zinc-800" />
+                                <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 bg-zinc-50 dark:bg-zinc-950 px-4 py-1 rounded-full border border-zinc-100 dark:border-zinc-800">
+                                    {sectorName}
+                                </h2>
+                                <div className="h-px flex-1 bg-zinc-100 dark:bg-zinc-800" />
+                            </div>
 
-                        return (
                             <motion.div
-                                key={plan.id}
-                                variants={itemVariants}
-                                className="bg-white dark:bg-zinc-950 rounded-[2rem] border border-zinc-100 dark:border-zinc-900 overflow-hidden hover:shadow-xl transition-all shadow-sm"
+                                variants={containerVariants}
+                                initial="hidden"
+                                animate="visible"
+                                className="space-y-4 max-w-3xl"
                             >
-                                {/* Header */}
-                                <div
-                                    onClick={() => setExpandedId(isExpanded ? null : plan.id)}
-                                    className="flex items-center gap-4 p-6 cursor-pointer"
-                                >
-                                    <div className={cn("p-3 rounded-2xl shadow-inner", plan.priority === 'high' ? "bg-rose-50 text-rose-500 dark:bg-rose-950/30" : "bg-zinc-50 text-zinc-500 dark:bg-zinc-900")}>
-                                        <AlertTriangle className="w-6 h-6" />
-                                    </div>
-                                    <div className="flex-1">
-                                        <div className="flex items-center gap-2">
-                                            <h3 className="font-bold text-zinc-900 dark:text-zinc-50">{plan.title}</h3>
-                                            {plan.priority === 'high' && <span className="bg-rose-100 dark:bg-rose-900/50 text-rose-600 dark:text-rose-400 text-[8px] font-black px-1.5 py-0.5 rounded uppercase">Urgente</span>}
-                                        </div>
-                                        <div className="flex items-center gap-3 mt-1">
-                                            <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider flex items-center gap-1">
-                                                <UserIcon className="w-3 h-3" /> {plan.profiles?.name || "Sem atribuição"}
-                                            </p>
-                                            <span className="w-1 h-1 rounded-full bg-zinc-300 dark:bg-zinc-700" />
-                                            <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider flex items-center gap-1">
-                                                <Calendar className="w-3 h-3" /> {new Date(plan.created_at).toLocaleDateString("pt-BR")}
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <div className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider", status.bg, status.color)}>
-                                        <StatusIcon className={cn("w-3.5 h-3.5", plan.status === "in_progress" && "animate-spin")} />
-                                        {status.label}
-                                    </div>
-                                </div>
+                                {items.map((plan) => {
+                                    const status = statusConfig[plan.status || 'pending'];
+                                    const StatusIcon = status.icon;
+                                    const isExpanded = expandedId === plan.id;
 
-                                {/* Expanded Content */}
-                                <AnimatePresence>
-                                    {isExpanded && (
+                                    return (
                                         <motion.div
-                                            initial={{ height: 0, opacity: 0 }}
-                                            animate={{ height: "auto", opacity: 1 }}
-                                            exit={{ height: 0, opacity: 0 }}
-                                            className="overflow-hidden bg-zinc-50 dark:bg-zinc-900/50"
+                                            key={plan.id}
+                                            variants={itemVariants}
+                                            className="bg-white dark:bg-zinc-950 rounded-[2rem] border border-zinc-100 dark:border-zinc-900 overflow-hidden hover:shadow-xl transition-all shadow-sm"
                                         >
-                                            <div className="p-6 pt-0 space-y-6">
-                                                
-                                                {/* Detalhamento 5W2H */}
-                                                <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 space-y-5">
-                                                    <div>
-                                                        <h4 className="text-[10px] font-black tracking-widest text-zinc-400 uppercase">Qual é a tarefa ou problema?</h4>
-                                                        <p className="text-sm text-zinc-800 dark:text-zinc-200 mt-1 font-medium">{plan.title}</p>
-                                                        {plan.description && <p className="text-xs text-zinc-500 mt-1">{plan.description}</p>}
+                                            {/* Header */}
+                                            <div
+                                                onClick={() => setExpandedId(isExpanded ? null : plan.id)}
+                                                className="flex items-center gap-4 p-6 cursor-pointer"
+                                            >
+                                                <div className={cn("p-3 rounded-2xl shadow-inner", plan.priority === 'high' ? "bg-rose-50 text-rose-500 dark:bg-rose-950/30" : "bg-zinc-50 text-zinc-500 dark:bg-zinc-900")}>
+                                                    <AlertTriangle className="w-6 h-6" />
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2">
+                                                        <h3 className="font-bold text-zinc-900 dark:text-zinc-50 truncate">{plan.title}</h3>
+                                                        {plan.priority === 'high' && <span className="bg-rose-100 dark:bg-rose-900/50 text-rose-600 dark:text-rose-400 text-[8px] font-black px-1.5 py-0.5 rounded uppercase">Urgente</span>}
                                                     </div>
-                                                    
-                                                    {plan.benefit && (
-                                                        <div>
-                                                            <h4 className="text-[10px] font-black tracking-widest text-emerald-500/80 uppercase">Benefício esperado</h4>
-                                                            <p className="text-sm text-zinc-800 dark:text-zinc-200 mt-1">{plan.benefit}</p>
-                                                        </div>
-                                                    )}
-
-                                                    {plan.step_by_step && (
-                                                        <div>
-                                                            <h4 className="text-[10px] font-black tracking-widest text-zinc-400 uppercase">Passo a passo</h4>
-                                                            <p className="text-sm text-zinc-800 dark:text-zinc-200 mt-1 whitespace-pre-line leading-relaxed">{plan.step_by_step}</p>
-                                                        </div>
-                                                    )}
-
-                                                    <div className="grid grid-cols-2 gap-4 pt-4 border-t border-zinc-50 dark:border-zinc-800/50">
-                                                        <div>
-                                                            <h4 className="text-[10px] font-black tracking-widest text-zinc-400 uppercase">Custo Estimado</h4>
-                                                            <p className="text-sm text-zinc-800 dark:text-zinc-200 mt-1 font-medium">
-                                                                {plan.cost_type === 'dinheiro' ? '💰 Requer Investimento' : '⏳ Apenas Tempo'}
-                                                            </p>
-                                                        </div>
-                                                        {plan.due_date && (
-                                                            <div>
-                                                                <h4 className="text-[10px] font-black tracking-widest text-rose-500/80 uppercase">Prazo Final</h4>
-                                                                <p className="text-sm text-zinc-800 dark:text-zinc-200 mt-1 font-medium">
-                                                                    {new Date(plan.due_date).toLocaleDateString("pt-BR")}
-                                                                </p>
-                                                            </div>
-                                                        )}
+                                                    <div className="flex items-center gap-3 mt-1">
+                                                        <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                                                            <UserIcon className="w-3 h-3" /> {plan.profiles?.name || "Sem atribuição"}
+                                                        </p>
+                                                        <span className="w-1 h-1 rounded-full bg-zinc-300 dark:bg-zinc-700" />
+                                                        <p className={cn("text-[10px] font-black uppercase tracking-wider flex items-center gap-1", plan.due_date ? "text-orange-500" : "text-zinc-400")}>
+                                                            <Calendar className="w-3 h-3" /> Prazo: {plan.due_date ? new Date(plan.due_date).toLocaleDateString("pt-BR") : "S/ Data"}
+                                                        </p>
                                                     </div>
                                                 </div>
-
-                                                {/* Exibição das Evidências (Se Resolvido) */}
-                                                {plan.status === 'resolved' && (
-                                                    <div className="p-5 bg-emerald-50/30 dark:bg-emerald-950/10 rounded-2xl border border-emerald-100 dark:border-emerald-900/30 space-y-4 shadow-inner">
-                                                        <h4 className="text-[10px] font-black tracking-widest text-emerald-600 dark:text-emerald-400 uppercase">Resultado da Resolução</h4>
-                                                        
-                                                        {plan.closing_comment && (
-                                                            <p className="text-sm text-zinc-700 dark:text-zinc-300 italic">"{plan.closing_comment}"</p>
-                                                        )}
-
-                                                        <div className="flex gap-4">
-                                                            {plan.photo_url && (
-                                                                <a href={plan.photo_url} target="_blank" rel="noreferrer" className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-zinc-800 rounded-xl text-[10px] font-bold text-zinc-600 dark:text-zinc-400 border border-zinc-100 dark:border-zinc-700 shadow-sm transition-transform hover:scale-105">
-                                                                    <Camera className="w-3.5 h-3.5 text-emerald-500" /> Ver Foto
-                                                                </a>
-                                                            )}
-                                                            {plan.file_url && (
-                                                                <a href={plan.file_url} target="_blank" rel="noreferrer" className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-zinc-800 rounded-xl text-[10px] font-bold text-zinc-600 dark:text-zinc-400 border border-zinc-100 dark:border-zinc-700 shadow-sm transition-transform hover:scale-105">
-                                                                    <Paperclip className="w-3.5 h-3.5 text-indigo-500" /> Ver Anexo
-                                                                </a>
-                                                            )}
-                                                        </div>
-
-                                                        {plan.satisfaction_rating && (
-                                                            <div className="flex gap-1 pt-2">
-                                                                {[1,2,3,4,5].map(s => (
-                                                                    <Star key={s} className={cn("w-4 h-4", s <= plan.satisfaction_rating! ? "fill-amber-400 text-amber-400" : "text-zinc-200 dark:text-zinc-800")} />
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                )}
-
-                                                <div className="flex items-center justify-between pt-4 border-t border-zinc-200 dark:border-zinc-800">
-                                                    <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">
-                                                        Criado em {new Date(plan.created_at).toLocaleDateString("pt-BR")}
-                                                    </span>
-                                                    <div className="flex gap-2">
-                                                        {plan.status !== 'resolved' && plan.status !== 'canceled' && (
-                                                            <button
-                                                                onClick={() => {
-                                                                    setResolvingPlanId(plan.id);
-                                                                    setExpandedId(plan.id);
-                                                                }}
-                                                                className="px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-black uppercase hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-500/20"
-                                                            >
-                                                                Finalizar e Resolver
-                                                            </button>
-                                                        )}
-                                                        {plan.status === 'pending' && (
-                                                            <button
-                                                                onClick={() => updateStatus(plan.id, 'in_progress', plan.notion_page_id)}
-                                                                className="px-4 py-2 bg-blue-500 text-white rounded-xl text-xs font-black uppercase hover:bg-blue-600 transition-colors shadow-lg shadow-blue-500/20"
-                                                            >
-                                                                Iniciar Agora
-                                                            </button>
-                                                        )}
-                                                    </div>
+                                                <div className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider", status.bg, status.color)}>
+                                                    <StatusIcon className={cn("w-3.5 h-3.5", plan.status === "in_progress" && "animate-spin")} />
+                                                    {status.label}
                                                 </div>
+                                            </div>
 
-                                                {/* Resolution Form Form */}
-                                                <AnimatePresence>
-                                                    {resolvingPlanId === plan.id && (
-                                                        <motion.div
-                                                            initial={{ height: 0, opacity: 0 }}
-                                                            animate={{ height: "auto", opacity: 1 }}
-                                                            exit={{ height: 0, opacity: 0 }}
-                                                            className="overflow-hidden"
-                                                        >
-                                                            <div className="mt-4 p-5 bg-zinc-100 dark:bg-zinc-900 rounded-3xl border border-emerald-100 dark:border-emerald-900/30 space-y-5">
-                                                                <div className="flex items-center justify-between">
-                                                                    <h4 className="text-sm font-black text-emerald-600 dark:text-emerald-400 flex items-center gap-2 uppercase tracking-tighter">
-                                                                        <CheckCircle2 className="w-4 h-4" />
-                                                                        Evidências da Solução
-                                                                    </h4>
-                                                                    <button onClick={() => setResolvingPlanId(null)} className="p-1.5 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-full transition-colors">
-                                                                        <X className="w-4 h-4 text-zinc-400" />
-                                                                    </button>
+                                            {/* Expanded Content */}
+                                            <AnimatePresence>
+                                                {isExpanded && (
+                                                    <motion.div
+                                                        initial={{ height: 0, opacity: 0 }}
+                                                        animate={{ height: "auto", opacity: 1 }}
+                                                        exit={{ height: 0, opacity: 0 }}
+                                                        className="overflow-hidden bg-zinc-50 dark:bg-zinc-900/50"
+                                                    >
+                                                        <div className="p-6 pt-0 space-y-6">
+                                                            
+                                                            {/* Detalhamento 5W2H */}
+                                                            <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 space-y-5">
+                                                                <div>
+                                                                    <h4 className="text-[10px] font-black tracking-widest text-zinc-400 uppercase">Qual é a tarefa ou problema?</h4>
+                                                                    <p className="text-sm text-zinc-800 dark:text-zinc-200 mt-1 font-medium">{plan.title}</p>
+                                                                    {plan.description && <p className="text-xs text-zinc-500 mt-1">{plan.description}</p>}
                                                                 </div>
                                                                 
-                                                                <div>
-                                                                    <label className="block text-[10px] font-black text-zinc-500 mb-2 uppercase tracking-widest">Comentário de Finalização</label>
-                                                                    <textarea
-                                                                        value={resolutionData.closing_comment}
-                                                                        onChange={e => setResolutionData({...resolutionData, closing_comment: e.target.value})}
-                                                                        rows={3}
-                                                                        placeholder="Descreva brevemente o que foi feito..."
-                                                                        className="w-full bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm focus:ring-4 focus:ring-emerald-500/10 focus:outline-none transition-all resize-none"
-                                                                    />
-                                                                </div>
-
-                                                                <div className="grid grid-cols-2 gap-4">
+                                                                {plan.benefit && (
                                                                     <div>
-                                                                        <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-2 text-center">Anexar Foto</label>
-                                                                        <label className="cursor-pointer flex flex-col items-center justify-center p-5 bg-white dark:bg-zinc-950 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl hover:border-emerald-500 hover:bg-emerald-50/10 transition-all">
-                                                                            {resolutionData.photo_url ? <CheckCircle2 className="w-8 h-8 text-emerald-500" /> : <Camera className="w-8 h-8 text-zinc-300" />}
-                                                                            <span className="text-[10px] mt-2 text-zinc-500 font-bold">{isUploading ? "Enviando..." : resolutionData.photo_url ? "Pronto!" : "Câmera / Galeria"}</span>
-                                                                            <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => handleFileUpload(e, 'photo')} />
-                                                                        </label>
+                                                                        <h4 className="text-[10px] font-black tracking-widest text-emerald-500/80 uppercase">Benefício esperado</h4>
+                                                                        <p className="text-sm text-zinc-800 dark:text-zinc-200 mt-1">{plan.benefit}</p>
+                                                                    </div>
+                                                                )}
+
+                                                                {plan.step_by_step && (
+                                                                    <div>
+                                                                        <h4 className="text-[10px] font-black tracking-widest text-zinc-400 uppercase">Passo a passo</h4>
+                                                                        <p className="text-sm text-zinc-800 dark:text-zinc-200 mt-1 whitespace-pre-line leading-relaxed">{plan.step_by_step}</p>
+                                                                    </div>
+                                                                )}
+
+                                                                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-zinc-50 dark:border-zinc-800/50">
+                                                                    <div>
+                                                                        <h4 className="text-[10px] font-black tracking-widest text-zinc-400 uppercase">Custo Estimado</h4>
+                                                                        <p className="text-sm text-zinc-800 dark:text-zinc-200 mt-1 font-medium">
+                                                                            {plan.cost_type === 'dinheiro' ? '💰 Requer Investimento' : '⏳ Apenas Tempo'}
+                                                                        </p>
                                                                     </div>
                                                                     <div>
-                                                                        <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-2 text-center">Anexar Arquivo</label>
-                                                                        <label className="cursor-pointer flex flex-col items-center justify-center p-5 bg-white dark:bg-zinc-950 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl hover:border-emerald-500 hover:bg-emerald-50/10 transition-all">
-                                                                            {resolutionData.file_url ? <CheckCircle2 className="w-6 h-6 text-emerald-500" /> : <Paperclip className="w-6 h-6 text-zinc-300" />}
-                                                                            <span className="text-[10px] mt-2 text-zinc-500 font-bold">{isUploading ? "Enviando..." : resolutionData.file_url ? "Pronto!" : "Docs / PDF / Outros"}</span>
-                                                                            <input type="file" className="hidden" onChange={(e) => handleFileUpload(e, 'file')} />
-                                                                        </label>
+                                                                        <h4 className="text-[10px] font-black tracking-widest text-zinc-400 uppercase">Data de Criação</h4>
+                                                                        <p className="text-sm text-zinc-800 dark:text-zinc-200 mt-1 font-medium">
+                                                                            {new Date(plan.created_at).toLocaleDateString("pt-BR")}
+                                                                        </p>
                                                                     </div>
-                                                                </div>
-
-                                                                <div className="flex flex-col items-center gap-3 py-2">
-                                                                    <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest">Satisfação com o Resultado</label>
-                                                                    <div className="flex justify-center gap-3">
-                                                                        {[1,2,3,4,5].map(star => (
-                                                                            <button
-                                                                                key={star}
-                                                                                type="button"
-                                                                                onClick={() => setResolutionData({...resolutionData, satisfaction_rating: star})}
-                                                                                className={cn("text-4xl transition-all hover:scale-125 active:scale-90", star <= resolutionData.satisfaction_rating ? "text-amber-400 drop-shadow-sm" : "text-zinc-200 dark:text-zinc-800")}
-                                                                            >
-                                                                                ★
-                                                                            </button>
-                                                                        ))}
-                                                                    </div>
-                                                                </div>
-
-                                                                <div className="flex gap-3 pt-2">
-                                                                    <button
-                                                                        onClick={handleResolveSubmit}
-                                                                        disabled={isUploading || !resolutionData.closing_comment}
-                                                                        className="flex-1 py-4 bg-emerald-500 text-white rounded-2xl font-black uppercase text-sm shadow-xl shadow-emerald-500/20 flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95 transition-all"
-                                                                    >
-                                                                        <Send className="w-5 h-5" />
-                                                                        Concluir e Ganhar XP
-                                                                    </button>
                                                                 </div>
                                                             </div>
-                                                        </motion.div>
-                                                    )}
-                                                </AnimatePresence>
-                                            </div>
+
+                                                            {/* Exibição das Evidências (Se Resolvido) */}
+                                                            {plan.status === 'resolved' && (
+                                                                <div className="p-5 bg-emerald-50/30 dark:bg-emerald-950/10 rounded-2xl border border-emerald-100 dark:border-emerald-900/30 space-y-4 shadow-inner">
+                                                                    <h4 className="text-[10px] font-black tracking-widest text-emerald-600 dark:text-emerald-400 uppercase">Resultado da Resolução</h4>
+                                                                    
+                                                                    {plan.closing_comment && (
+                                                                        <p className="text-sm text-zinc-700 dark:text-zinc-300 italic">"{plan.closing_comment}"</p>
+                                                                    )}
+
+                                                                    <div className="flex gap-4">
+                                                                        {plan.photo_url && (
+                                                                            <a href={plan.photo_url} target="_blank" rel="noreferrer" className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-zinc-800 rounded-xl text-[10px] font-bold text-zinc-600 dark:text-zinc-400 border border-zinc-100 dark:border-zinc-700 shadow-sm transition-transform hover:scale-105">
+                                                                                <Camera className="w-3.5 h-3.5 text-emerald-500" /> Ver Foto
+                                                                            </a>
+                                                                        )}
+                                                                        {plan.file_url && (
+                                                                            <a href={plan.file_url} target="_blank" rel="noreferrer" className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-zinc-800 rounded-xl text-[10px] font-bold text-zinc-600 dark:text-zinc-400 border border-zinc-100 dark:border-zinc-700 shadow-sm transition-transform hover:scale-105">
+                                                                                <Paperclip className="w-3.5 h-3.5 text-indigo-500" /> Ver Anexo
+                                                                            </a>
+                                                                        )}
+                                                                    </div>
+
+                                                                    {plan.satisfaction_rating && (
+                                                                        <div className="flex gap-1 pt-2">
+                                                                            {[1,2,3,4,5].map(s => (
+                                                                                <Star key={s} className={cn("w-4 h-4", s <= plan.satisfaction_rating! ? "fill-amber-400 text-amber-400" : "text-zinc-200 dark:text-zinc-800")} />
+                                                                            ))}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            )}
+
+                                                            <div className="flex items-center justify-between pt-4 border-t border-zinc-200 dark:border-zinc-800">
+                                                                <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">
+                                                                    ID: {plan.id.split('-')[0]}
+                                                                </span>
+                                                                <div className="flex gap-2">
+                                                                    {plan.status !== 'resolved' && plan.status !== 'canceled' && (
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                setResolvingPlanId(plan.id);
+                                                                                setExpandedId(plan.id);
+                                                                            }}
+                                                                            className="px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-black uppercase hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-500/20"
+                                                                        >
+                                                                            Finalizar e Resolver
+                                                                        </button>
+                                                                    )}
+                                                                    {plan.status === 'pending' && (
+                                                                        <button
+                                                                            onClick={() => updateStatus(plan.id, 'in_progress', plan.notion_page_id)}
+                                                                            className="px-4 py-2 bg-blue-500 text-white rounded-xl text-xs font-black uppercase hover:bg-blue-600 transition-colors shadow-lg shadow-blue-500/20"
+                                                                        >
+                                                                            Iniciar Agora
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Resolution Form Form */}
+                                                            <AnimatePresence>
+                                                                {resolvingPlanId === plan.id && (
+                                                                    <motion.div
+                                                                        initial={{ height: 0, opacity: 0 }}
+                                                                        animate={{ height: "auto", opacity: 1 }}
+                                                                        exit={{ height: 0, opacity: 0 }}
+                                                                        className="overflow-hidden"
+                                                                    >
+                                                                        <div className="mt-4 p-5 bg-zinc-100 dark:bg-zinc-900 rounded-3xl border border-emerald-100 dark:border-emerald-900/30 space-y-5">
+                                                                            <div className="flex items-center justify-between">
+                                                                                <h4 className="text-sm font-black text-emerald-600 dark:text-emerald-400 flex items-center gap-2 uppercase tracking-tighter">
+                                                                                    <CheckCircle2 className="w-4 h-4" />
+                                                                                    Evidências da Solução
+                                                                                </h4>
+                                                                                <button onClick={() => setResolvingPlanId(null)} className="p-1.5 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-full transition-colors">
+                                                                                    <X className="w-4 h-4 text-zinc-400" />
+                                                                                </button>
+                                                                            </div>
+                                                                            
+                                                                            <div>
+                                                                                <label className="block text-[10px] font-black text-zinc-500 mb-2 uppercase tracking-widest">Comentário de Finalização</label>
+                                                                                <textarea
+                                                                                    value={resolutionData.closing_comment}
+                                                                                    onChange={e => setResolutionData({...resolutionData, closing_comment: e.target.value})}
+                                                                                    rows={3}
+                                                                                    placeholder="Descreva brevemente o que foi feito..."
+                                                                                    className="w-full bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm focus:ring-4 focus:ring-emerald-500/10 focus:outline-none transition-all resize-none"
+                                                                                />
+                                                                            </div>
+
+                                                                            <div className="grid grid-cols-2 gap-4">
+                                                                                <div>
+                                                                                    <label className="block text-[10px] font-black text-zinc-500 mb-2 uppercase tracking-widest text-center">Anexar Foto</label>
+                                                                                    <label className="cursor-pointer flex flex-col items-center justify-center p-5 bg-white dark:bg-zinc-950 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl hover:border-emerald-500 hover:bg-emerald-50/10 transition-all">
+                                                                                        {resolutionData.photo_url ? <CheckCircle2 className="w-8 h-8 text-emerald-500" /> : <Camera className="w-8 h-8 text-zinc-300" />}
+                                                                                        <span className="text-[10px] mt-2 text-zinc-500 font-bold">{isUploading ? "Enviando..." : resolutionData.photo_url ? "Pronto!" : "Câmera / Galeria"}</span>
+                                                                                        <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => handleFileUpload(e, 'photo')} />
+                                                                                    </label>
+                                                                                </div>
+                                                                                <div>
+                                                                                    <label className="block text-[10px] font-black text-zinc-500 mb-2 uppercase tracking-widest text-center">Anexar Arquivo</label>
+                                                                                    <label className="cursor-pointer flex flex-col items-center justify-center p-5 bg-white dark:bg-zinc-950 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl hover:border-emerald-500 hover:bg-emerald-50/10 transition-all">
+                                                                                        {resolutionData.file_url ? <CheckCircle2 className="w-8 h-8 text-emerald-500" /> : <Paperclip className="w-8 h-8 text-zinc-300" />}
+                                                                                        <span className="text-[10px] mt-2 text-zinc-500 font-bold">{isUploading ? "Enviando..." : resolutionData.file_url ? "Pronto!" : "Docs / PDF / Outros"}</span>
+                                                                                        <input type="file" className="hidden" onChange={(e) => handleFileUpload(e, 'file')} />
+                                                                                    </label>
+                                                                                </div>
+                                                                            </div>
+
+                                                                            <div className="flex flex-col items-center gap-3 py-2">
+                                                                                <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest">Satisfação com o Resultado</label>
+                                                                                <div className="flex justify-center gap-3">
+                                                                                    {[1,2,3,4,5].map(star => (
+                                                                                        <button
+                                                                                            key={star}
+                                                                                            type="button"
+                                                                                            onClick={() => setResolutionData({...resolutionData, satisfaction_rating: star})}
+                                                                                            className={cn("text-4xl transition-all hover:scale-125 active:scale-90", star <= resolutionData.satisfaction_rating ? "text-amber-400 drop-shadow-sm" : "text-zinc-200 dark:text-zinc-800")}
+                                                                                        >
+                                                                                            ★
+                                                                                        </button>
+                                                                                    ))}
+                                                                                </div>
+                                                                            </div>
+
+                                                                            <div className="flex gap-3 pt-2">
+                                                                                <button
+                                                                                    onClick={handleResolveSubmit}
+                                                                                    disabled={isUploading || !resolutionData.closing_comment}
+                                                                                    className="flex-1 py-4 bg-emerald-500 text-white rounded-2xl font-black uppercase text-sm shadow-xl shadow-emerald-500/20 flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95 transition-all"
+                                                                                >
+                                                                                    <Send className="w-5 h-5" />
+                                                                                    Concluir e Ganhar XP
+                                                                                </button>
+                                                                            </div>
+                                                                        </div>
+                                                                    </motion.div>
+                                                                )}
+                                                            </AnimatePresence>
+                                                        </div>
+                                                    </motion.div>
+                                                )}
+                                            </AnimatePresence>
                                         </motion.div>
-                                    )}
-                                </AnimatePresence>
+                                    );
+                                })}
                             </motion.div>
-                        );
-                    })}
-                </motion.div>
+                        </div>
+                    ))}
+                </div>
             )}
         </div>
     );
