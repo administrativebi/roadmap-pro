@@ -302,20 +302,30 @@ export default function ActionPlansPage() {
                         </>
                     )}
 
-                    <div className="relative flex-1">
+                    <div className="relative flex-1 min-w-[120px]">
                         <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
                         <input 
                             type="date" 
-                            value={dateFilter}
-                            onChange={(e) => { setDateFilter(e.target.value); setRelativeFilter('all'); }}
-                            className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-xl pl-9 pr-3 py-2.5 text-[10px] sm:text-xs focus:ring-2 focus:ring-orange-500 outline-none font-bold text-zinc-600 dark:text-zinc-400"
+                            value={startDate}
+                            onChange={(e) => { setStartDate(e.target.value); setRelativeFilter('all'); }}
+                            className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-xl pl-9 pr-2 py-2.5 text-[10px] sm:text-xs focus:ring-2 focus:ring-orange-500 outline-none font-bold text-zinc-600 dark:text-zinc-400"
+                        />
+                    </div>
+                    <span className="text-zinc-400 font-bold">-</span>
+                    <div className="relative flex-1 min-w-[120px]">
+                        <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
+                        <input 
+                            type="date" 
+                            value={endDate}
+                            onChange={(e) => { setEndDate(e.target.value); setRelativeFilter('all'); }}
+                            className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-xl pl-9 pr-2 py-2.5 text-[10px] sm:text-xs focus:ring-2 focus:ring-orange-500 outline-none font-bold text-zinc-600 dark:text-zinc-400"
                         />
                     </div>
                     
-                    <div className="relative flex-1">
+                    <div className="relative flex-1 min-w-[120px]">
                         <select 
                             value={relativeFilter}
-                            onChange={(e) => { setRelativeFilter(e.target.value); setDateFilter(''); }}
+                            onChange={(e) => { setRelativeFilter(e.target.value); setStartDate(''); setEndDate(''); }}
                             className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-xl px-3 py-2.5 text-[10px] sm:text-xs focus:ring-2 focus:ring-orange-500 outline-none appearance-none font-bold text-zinc-600 dark:text-zinc-400 text-center"
                         >
                             <option value="all">Datas</option>
