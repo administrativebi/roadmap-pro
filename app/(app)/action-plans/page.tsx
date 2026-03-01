@@ -71,10 +71,12 @@ export default function ActionPlansPage() {
     
     // Filters and Tabs
     const [activeTab, setActiveTab] = useState<PlanStatus | 'all'>("pending");
-    const [dateFilter, setDateFilter] = useState<string>("");
+    const [startDate, setStartDate] = useState<string>("");
+    const [endDate, setEndDate] = useState<string>("");
     const [relativeFilter, setRelativeFilter] = useState<string>("all");
     const [userFilter, setUserFilter] = useState<string>("me");
     const [sectorFilter, setSectorFilter] = useState<string>("all");
+    const [groupBy, setGroupBy] = useState<'sector' | 'user'>('sector');
 
     const [profiles, setProfiles] = useState<{ id: string; name: string }[]>([]);
     const [sectors, setSectors] = useState<{ id: string; name: string }[]>([]);
@@ -145,8 +147,10 @@ export default function ActionPlansPage() {
             const matchesStatus = activeTab === 'all' || p.status === activeTab;
             
             let matchesDate = true;
-            if (dateFilter) {
-                matchesDate = p.created_at.startsWith(dateFilter);
+            if (startDate || endDate) {
+                const planDateStr = p.due_date ? p.due_date.split('T')[0] : "9999-12-31"; // Use due_date for date filtering since user wants to display by due_date
+                if (startDate && planDateStr < startDate) matchesDate = false;
+                if (endDate && planDateStr > endDate) matchesDate = false;
             } else if (relativeFilter !== 'all') {
                 const now = new Date();
                 const planDate = new Date(p.created_at);
@@ -161,7 +165,7 @@ export default function ActionPlansPage() {
 
             return matchesStatus && matchesDate;
         });
-    }, [plans, activeTab, dateFilter, relativeFilter]);
+    }, [plans, activeTab, startDate, endDate, relativeFilter]);
 
     const plansBySector = useMemo(() => {
         const grouped: Record<string, ActionPlan[]> = {};
